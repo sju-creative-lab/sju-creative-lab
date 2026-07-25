@@ -13,7 +13,7 @@ LOGO_IMAGE = "logo-main02_1.png"
 # 1. 페이지 설정
 # ==========================================
 st.set_page_config(
-    page_title="공공 GitLab 저장소",
+    page_title="교직원 크리에이티브 Lab 저장소",
     layout="wide",
     initial_sidebar_state="expanded"
 )
