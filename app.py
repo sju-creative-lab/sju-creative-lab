@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 # ==========================================
 # 0. 공통 설정
 # ==========================================
-LOGO_IMAGE = "https://upload.wikimedia.org/wikipedia/commons/1/19/Emblem_of_South_Korea.svg"
+LOGO_IMAGE = "logo-main03_1.png"
 DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
 
