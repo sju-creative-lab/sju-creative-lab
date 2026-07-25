@@ -103,7 +103,7 @@ if not st.session_state['logged_in'] and "user_session" in st.query_params:
     st.session_state['last_activity'] = datetime.now()
 
 # ==========================================
-# 2. 커스텀 CSS & 자바스크립트 타이머 (완벽 일체형 바)
+# 2. 커스텀 CSS & 자바스크립트 타이머
 # ==========================================
 def inject_timer_js():
     expiry_time = st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES)
@@ -131,48 +131,6 @@ st.markdown("""
     .stApp { background-color: #f8fafc; color: #1e293b; }
     .metric-card { background-color: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
     .panel-card { background-color: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; height: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
-    
-    /* 완벽하게 맞물린 일체형 컨트롤 박스 */
-    .control-group {
-        display: flex;
-        align-items: center;
-        background-color: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        overflow: hidden;
-        height: 38px;
-        width: 100%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }
-    .control-btn-left, .control-btn-right {
-        background-color: #ffffff;
-        border: none;
-        color: #334155;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        flex: 1;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background-color 0.2s;
-    }
-    .control-btn-left:hover, .control-btn-right:hover {
-        background-color: #f1f5f9;
-    }
-    .control-timer {
-        background-color: #475569;
-        color: #ffffff;
-        font-family: monospace;
-        font-size: 14px;
-        font-weight: bold;
-        flex: 1.2;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -234,24 +192,6 @@ def show_main_page():
         st.markdown(f"### 공공 개발 산출물 저장소(공공 GitLab) 프로젝트 현황 - 환영합니다, **{st.session_state.get('user_id', '사용자')}**님")
     
     with col_ui:
-        # 우측 상단 완벽 일체형 제어 바 구현 (HTML/JS 인터랙션 연동)
-        current_expiry = (st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES)).timestamp() * 1000
-        
-        # Streamlit 내장 버튼 클릭 처리를 위한 빈 공간 레이아웃 및 폼 제어
-        b1, b2, b3 = st.columns([1, 1.2, 1])
-        
-        # HTML 기반 일체형 바 렌더링 및 Streamlit 콜백 매핑
-        st.markdown(f"""
-            <div class="control-group">
-                <form action="" method="get" style="display:contents;">
-                </form>
-            </div>
-            <script>
-            // 타이머 업데이트 스크립트 실행
-            </script>
-        """, unsafe_allow_html=True)
-        
-        # 깔끔한 스트림릿 컬럼 버튼 배치로 완벽 일체감 구현
         ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 1.2, 1])
         with ctrl_col1:
             if st.button("로그아웃", use_container_width=True):
@@ -259,7 +199,7 @@ def show_main_page():
                 st.session_state['logged_in'] = False
                 st.rerun()
         with ctrl_col2:
-            st.markdown(f"<div style='background-color:#475569; color:white; text-align:center; padding:8px 0; font-family:monospace; font-weight:bold; font-size:14px; border-radius:0px;' id='realtime-timer'>--:--</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background-color:#475569; color:white; text-align:center; padding:8px 0; font-family:monospace; font-weight:bold; font-size:14px;' id='realtime-timer'>--:--</div>", unsafe_allow_html=True)
             inject_timer_js()
         with ctrl_col3:
             if st.button("연장", use_container_width=True):
@@ -276,26 +216,23 @@ def show_main_page():
     else:
         tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
 
-    # ---------------- 탭 1: 대시보드 현황 (참조 이미지 스타일) ----------------
+    # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        # 상단 카드 지표
         m1, m2, m3, m4, m5 = st.columns(5)
-        with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>전체 프로젝트</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
+        with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>전체 프로젝트</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개 프로젝트 기준</div></div>", unsafe_allow_html=True)
         with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>월간 프로젝트</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
         with m3: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>전체 이슈</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 0 / 완료 0</div></div>", unsafe_allow_html=True)
-        with m4: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>Star</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>좋아요(로그인 사용자)</div></div>", unsafe_allow_html=True)
+        with m4: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>Star</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>좋아요 사용자</div></div>", unsafe_allow_html=True)
         with m5: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
 
         st.write("<br>", unsafe_allow_html=True)
 
-        # 중단 그래프 및 요약 영역 (참조 시각화 레이아웃 배치)
         chart_col1, chart_col2, chart_col3 = st.columns([5, 3, 2])
 
         with chart_col1:
             st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
             st.markdown("##### 프로젝트 활동 현황")
             if repo_data:
-                # 가상의 일자별 트렌드 데이터 생성 및 시각화
                 dates = pd.date_range(end=datetime.today(), periods=7).strftime("%m-%d").tolist()
                 trend_df = pd.DataFrame({
                     "일자": dates,
@@ -313,7 +250,6 @@ def show_main_page():
         with chart_col2:
             st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
             st.markdown("##### 분야별 프로젝트 분포")
-            # 도넛 차트 구현
             pie_df = pd.DataFrame({
                 "분야": ["공공행정", "재난안전", "보건복지", "기타"],
                 "비율": [58.6, 20.7, 10.3, 10.4]
@@ -339,7 +275,7 @@ def show_main_page():
             st.info("등록된 프로젝트가 없습니다.")
         else:
             cols = st.columns(min(len(repo_data), 4))
-            for idx, item in enumerate(repo_data[-4:]:
+            for idx, item in enumerate(repo_data[-4:]):
                 with cols[idx % len(cols)]:
                     st.markdown(f"""
                         <div style="background-color: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
@@ -460,19 +396,21 @@ def show_main_page():
                     st.success(f"사용자 [{target_user}] 계정이 삭제되었습니다.")
                     st.rerun()
 
-    with st.sidebar:
-        col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
-        with col_side2: st.image(LOGO_IMAGE, use_container_width=True)
-        st.markdown("<h3 style='text-align:center;'>AI 서정 실험실</h3>", unsafe_allow_html=True)
-        st.markdown("---")
-        st.selectbox("분야", ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
-        st.selectbox("정렬 기준", ["최근 활동순", "별점 높은순", "이슈 많은순"])
-        st.text_input("검색어", placeholder="프로젝트 검색...")
-        cb1, cb2 = st.columns(2)
-        cb1.button("검색", use_container_width=True)
-        cb2.button("초기화", use_container_width=True)
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("<div style='background-color: #f1f5f9; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;'><h4 style='color: #0f172a; margin-bottom: 5px;'>AI 서정 실험실</h4><p style='font-size: 13px; color: #64748b;'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p><div style='font-size: 22px; padding: 10px 0; color: #2563eb; font-weight: bold;'>Data & AI</div><p style='font-size: 11px; font-weight: bold; color: #64748b; margin-top: 5px;'>AI로 더 다정한 세상을 만들게요</p></div>", unsafe_allow_html=True)
+with st.sidebar:
+    col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
+    with col_side2: st.image(LOGO_IMAGE, use_container_width=True)
+    st.markdown("<h3 style='text-align:center;'>AI 서정 실험실</h3>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.selectbox("분야", ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
+    st.selectbox("정렬 기준", ["최근 활동순", "별점 높은순", "이슈 많은순"])
+    st.text_input("검색어", placeholder="프로젝트 검색...")
+    cb1, cb2 = st.columns(2)
+    cb1.button("검색", use_container_width=True)
+    cb2.button("초기화", use_container_width=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<div style='background-color: #f1f5f9; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;'><h4 style='color: #0f172a; margin-bottom: 5px;'>AI 서정 실험실</h4><p style='font-size: 13px; color: #64748b;'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p><div style='font-size: 22px; padding: 10px 0; color: #2563eb; font-weight: bold;'>Data & AI</div><p style='font-size: 11px; font-weight: bold; color: #64748b; margin-top: 5px;'>AI로 더 다정한 세상을 만들게요</p></div>", unsafe_allow_html=True)
 
-if not st.session_state['logged_in']: show_login_page()
-else: show_main_page()
+if not st.session_state['logged_in']:
+    show_login_page()
+else:
+    show_main_page()
