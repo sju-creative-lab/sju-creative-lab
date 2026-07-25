@@ -21,11 +21,17 @@ st.set_page_config(page_title="공공 개발 산출물 저장소", layout="wide"
 # 1. DB 연동 (구글 시트 & 로컬 하이브리드)
 # ==========================================
 def load_data():
-    local_data = {"users_db": {"admin": "password1234"}, "repository": []}
+    local_data = {
+        "users_db": {"admin": "password1234"}, 
+        "repository": [],
+        "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"]
+    }
     
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "rb") as f:
-            local_data = pickle.load(f)
+            loaded = pickle.load(f)
+            if isinstance(loaded, dict):
+                local_data.update(loaded)
             
     st.session_state['db_mode'] = "Local File"
     
@@ -186,11 +192,10 @@ def show_main_page():
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # 상단 타이틀 및 우측 일체형 컨트롤 바 배치
     col_title, col_ui = st.columns([5, 5])
     
     with col_title:
-        st.markdown(f"### 공공 개발 산출물 저장소(공공 GitLab) 프로젝트 현황")
+        st.markdown(f"### 공공 개발 산출물 저장소(공공 GitHub) 프로젝트 현황")
         st.caption(f"환영합니다, **{st.session_state.get('user_id', '사용자')}**님")
     
     with col_ui:
@@ -220,9 +225,9 @@ def show_main_page():
     else:
         tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
 
-    # ---------------- 탭 1: 대시보드 현황 (참조 이미지 레이아웃 100% 반영) ----------------
+    # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        # 1. 상단 지표 카드 5개
+        # 1. 상단 지표 카드 5개 (빈 네모칸 제거됨)
         m1, m2, m3, m4, m5 = st.columns(5)
         with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>전체 프로젝트</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
         with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: #64748b; font-weight: bold;'>월간 프로젝트</div><div style='font-size: 26px; font-weight: bold; color: #0f172a;'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
@@ -232,7 +237,7 @@ def show_main_page():
 
         st.write("<br>", unsafe_allow_html=True)
 
-        # 2. 중단 3분할 영역 (활동 현황 차트 / 분야별 도넛 차트 / 활동 요약 및 통계)
+        # 2. 중단 3분할 영역 (실제 데이터 반영)
         chart_col1, chart_col2, chart_col3 = st.columns([5, 3, 2])
 
         with chart_col1:
@@ -242,8 +247,7 @@ def show_main_page():
                 dates = pd.date_range(end=datetime.today(), periods=7).strftime("%m-%d").tolist()
                 trend_df = pd.DataFrame({
                     "일자": dates,
-                    "커밋 수": [12, 18, 5, 25, 40, 30, total_projects * 5],
-                    "업데이트된 프로젝트": [2, 4, 1, 6, 10, 8, total_projects]
+                    "커밋 수": [0, 0, 0, 0, 0, 0, total_projects * 2]
                 })
                 fig = px.bar(trend_df, x="일자", y="커밋 수", title="", labels={'일자': '', '커밋 수': ''})
                 fig.update_traces(marker_color='#3b82f6')
@@ -256,41 +260,44 @@ def show_main_page():
         with chart_col2:
             st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
             st.markdown("##### 분야별 프로젝트 분포")
-            pie_df = pd.DataFrame({
-                "분야": ["공공행정", "재난안전", "보건복지", "기타"],
-                "비율": [58.6, 20.7, 10.3, 10.4]
-            })
-            fig_pie = px.pie(pie_df, values='비율', names='분야', hole=0.6)
-            fig_pie.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            if repo_data:
+                df_repo = pd.DataFrame(repo_data)
+                cat_counts = df_repo.get('category', pd.Series(['미분류']*len(df_repo))).value_counts().reset_index()
+                cat_counts.columns = ['분야', '건수']
+                fig_pie = px.pie(cat_counts, values='건수', names='분야', hole=0.6)
+                fig_pie.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
             st.markdown("</div>", unsafe_allow_html=True)
 
         with chart_col3:
             st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
             st.markdown("##### 활동 요약 (최근 7일)")
             st.write("---")
-            st.markdown(f"**커밋 수:** {total_projects * 4}건")
+            st.markdown(f"**커밋 수:** {total_projects * 2}건")
             st.markdown("**이슈 생성:** 0건")
             st.markdown(f"**업데이트된 프로젝트:** {total_projects}건")
             st.write("---")
             st.markdown("##### 언어 사용 통계")
-            st.markdown("Python 60% | HTML 40%")
+            st.markdown("Python / HTML 중심 운영")
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.write("<br>", unsafe_allow_html=True)
         st.markdown("##### 최근 활동 프로젝트")
         
-        # 3. 하단 최근 활동 프로젝트 카드 그리드 (실제 업로드된 산출물 연동)
+        # 3. 하단 최근 활동 프로젝트 카드 그리드
         if not repo_data:
             st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
         else:
             cols = st.columns(min(len(repo_data), 4))
             for idx, item in enumerate(repo_data[-4:]):
                 with cols[idx % len(cols)]:
+                    cat_val = item.get('category', '일반')
                     st.markdown(f"""
                         <div style="background-color: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
                             <div>
-                                <span style="font-size: 11px; color: #64748b;">담당자: {item['author']}</span>
+                                <span style="font-size: 11px; color: #64748b;">{cat_val} | {item['author']}</span>
                                 <h6 style="margin: 5px 0; color: #0f172a; font-weight: bold;">{item['title']}</h6>
                                 <p style="font-size: 12px; color: #475569; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{item['desc']}</p>
                             </div>
@@ -306,6 +313,8 @@ def show_main_page():
         with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
             with st.form("upload_form", clear_on_submit=True):
                 proj_name = st.text_input("프로젝트 명")
+                categories_list = st.session_state['app_data'].get('categories', ['전체', '교무처', '학생처', '총무처', '기획처', '단과대학', '기타'])
+                proj_cat = st.selectbox("분야 선택", options=[c for c in categories_list if c != '전체'])
                 proj_desc = st.text_area("산출물 설명")
                 uploaded_file = st.file_uploader("산출물 파일 첨부", type=['zip', 'pdf', 'py', 'csv', 'txt', 'xlsx'])
                 
@@ -314,6 +323,7 @@ def show_main_page():
                         new_item = {
                             "id": len(repo_data) + 1,
                             "title": proj_name,
+                            "category": proj_cat,
                             "desc": proj_desc,
                             "author": st.session_state.get('user_id', '익명'),
                             "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -337,7 +347,8 @@ def show_main_page():
                 with st.container():
                     col_info, col_action = st.columns([4, 1])
                     with col_info:
-                        st.markdown(f"#### {item['title']}")
+                        c_tag = item.get('category', '일반')
+                        st.markdown(f"#### {item['title']} <span style='font-size:12px; background:#e2e8f0; padding:2px 6px; border-radius:4px;'>{c_tag}</span>", unsafe_allow_html=True)
                         st.markdown(f"**공유자:** {item['author']} | **등록일:** {item['date']}")
                         st.write(item['desc'])
                     with col_action:
@@ -387,12 +398,10 @@ def show_main_page():
                                 st.rerun()
                 st.markdown("---")
 
-    # ---------------- 탭 3: 계정 관리 (관리자 전용) ----------------
+    # ---------------- 탭 3: 계정 관리 및 분야 설정 (관리자 전용) ----------------
     if is_admin:
         with tab3:
             st.markdown("### 시스템 계정 관리")
-            st.caption("관리자(admin) 계정으로 접속하여 생성된 전체 사용자를 조회하고 관리할 수 있습니다.")
-            
             users_db = st.session_state['app_data']['users_db']
             users_df = pd.DataFrame(list(users_db.items()), columns=['사용자 ID', '비밀번호'])
             st.dataframe(users_df, use_container_width=True, hide_index=True)
@@ -406,20 +415,44 @@ def show_main_page():
                     st.success(f"사용자 [{target_user}] 계정이 삭제되었습니다.")
                     st.rerun()
 
-# 사이드바 구성 (참조 이미지 스타일)
+            st.markdown("---")
+            st.markdown("### 사이드바 [분야] 필터 항목 구성")
+            current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
+            st.write("현재 등록된 분야 목록:", current_cats)
+            
+            new_cat_input = st.text_input("추가할 새로운 분야명 입력")
+            if st.button("분야 추가"):
+                if new_cat_input and new_cat_input not in current_cats:
+                    st.session_state['app_data']['categories'].append(new_cat_input)
+                    save_data(st.session_state['app_data'])
+                    st.success(f"분야 [{new_cat_input}]가 추가되었습니다.")
+                    st.rerun()
+                    
+            rem_cat = st.selectbox("삭제할 분야 선택", options=[c for c in current_cats if c != '전체'])
+            if st.button("선택 분야 삭제"):
+                if rem_cat in st.session_state['app_data']['categories']:
+                    st.session_state['app_data']['categories'].remove(rem_cat)
+                    save_data(st.session_state['app_data'])
+                    st.success(f"분야 [{rem_cat}]가 삭제되었습니다.")
+                    st.rerun()
+
+# 사이드바 구성 (AI 서정 실험실 및 대학 직원 맞춤형 텍스트 적용)
 with st.sidebar:
     col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
     with col_side2: st.image(LOGO_IMAGE, use_container_width=True)
-    st.markdown("<h3 style='text-align:center;'>AI 정부 실험실</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align:center;'>AI 서정 실험실</h3>", unsafe_allow_html=True)
     st.markdown("---")
-    st.selectbox("분야", ["전체", "공공행정", "재난안전", "보건복지", "기타"])
+    
+    cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
+    st.selectbox("분야", options=cat_options)
     st.selectbox("정렬 기준", ["최근 활동순", "별점 높은순", "이슈 많은순"])
     st.text_input("검색어", placeholder="프로젝트 검색...")
     cb1, cb2 = st.columns(2)
     cb1.button("검색", use_container_width=True)
     cb2.button("초기화", use_container_width=True)
+    
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("<div style='background-color: #f1f5f9; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;'><h4 style='color: #0f172a; margin-bottom: 5px;'>AI 정부 실험실</h4><p style='font-size: 13px; color: #64748b;'>공무원이 현장의 불편을 AI로 해결하는 실험 공간</p><div style='font-size: 20px; padding: 10px 0; color: #2563eb; font-weight: bold;'>Data & AI</div></div>", unsafe_allow_html=True)
+    st.markdown("<div style='background-color: #f1f5f9; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;'><h4 style='color: #0f172a; margin-bottom: 5px;'>AI 서정 실험실</h4><p style='font-size: 13px; color: #64748b;'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p><div style='font-size: 20px; padding: 10px 0; color: #2563eb; font-weight: bold;'>Data & AI</div></div>", unsafe_allow_html=True)
 
 if not st.session_state['logged_in']:
     show_login_page()
