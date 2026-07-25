@@ -63,3 +63,14 @@ with st.form("feedback_form"):
             st.success(f"{user_name}님의 소중한 의견이 등록되었습니다! 감사합니다. 👍")
         else:
             st.warning("이름과 내용을 모두 입력해 주세요.")
+
+            st.divider()
+st.subheader("📤 내 결과물 업로드하기 (부서원용)")
+st.write("개발한 코드(.py)나 산출물(.pdf, .zip 등)을 여기에 끌어다 놓으세요.")
+
+# 파일 업로드 기능 창 만들기
+uploaded_file = st.file_uploader("파일 선택", accept_multiple_files=False)
+
+if uploaded_file is not None:
+    st.success(f"'{uploaded_file.name}' 파일이 성공적으로 업로드 준비가 되었습니다! 🎉")
+    # 실제로는 여기서 데이터베이스나 클라우드로 파일을 전송하는 코드가 들어갑니다.
