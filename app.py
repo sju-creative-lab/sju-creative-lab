@@ -9,7 +9,7 @@ import os
 # 0. 공통 설정 (로고 이미지 주소)
 # ==========================================
 # VS Code에 올리신 로고 파일명(예: "logo.png") 또는 이미지 URL을 입력하세요.
-LOGO_IMAGE = "https://upload.wikimedia.org/wikipedia/commons/1/19/Emblem_of_South_Korea.svg"
+LOGO_IMAGE = "logo-main03_1.png"
 
 # ==========================================
 # 1. 페이지 설정
