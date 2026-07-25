@@ -7,7 +7,7 @@ from datetime import datetime
 # 0. 공통 설정 (로고 이미지 주소)
 # ==========================================
 # 여기에 원하는 로고 이미지의 URL이나 깃허브에 올린 파일명(예: "logo.png")을 입력하세요.
-LOGO_IMAGE = "https://upload.wikimedia.org/wikipedia/commons/1/19/Emblem_of_South_Korea.svg"
+LOGO_IMAGE = "logo-main02_1.png"
 
 # ==========================================
 # 1. 페이지 설정
