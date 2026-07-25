@@ -53,7 +53,7 @@ def show_login_page():
         with col_logo2:
             st.image(LOGO_IMAGE, use_container_width=True)
             
-        st.markdown("<h2 style='color: white; text-align: center; margin-top: 10px;'>공공 GitLab 저장소</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='color: white; text-align: center; margin-top: 10px;'>교직원 크리에이티브 Lab 저장소</h2>", unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True)
         
         tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
