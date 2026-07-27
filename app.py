@@ -21,9 +21,6 @@ st.set_page_config(page_title="공공 개발 산출물 저장소", layout="wide"
 
 
 def now_kst():
-    """한국 표준시(KST, UTC+9) 기준 현재 시각을 반환합니다.
-    Streamlit Cloud 서버는 UTC 기준으로 동작하므로, 화면에 표시되는 시각과
-    실제 한국 시간의 오차를 없애기 위해 이 함수를 모든 시각 표기에 공통으로 사용합니다."""
     return datetime.now(KST)
 
 
@@ -48,7 +45,6 @@ def load_data():
     if 'deleted_ids' not in local_data:
         local_data['deleted_ids'] = []
 
-    # ---- 구버전(단순 "ID: 비밀번호" 문자열) 데이터 구조를 신버전(dict) 구조로 자동 마이그레이션 ----
     migrated_users = {}
     for uid, uval in local_data.get('users_db', {}).items():
         if isinstance(uval, str):
@@ -99,7 +95,6 @@ def load_data():
                 conn = None
 
             if conn is not None:
-                # ---- Users 시트: ID, Password, Dept, Manager, Approved 5개 컬럼 구조 ----
                 try:
                     users_df = conn.read(worksheet="Users", ttl=0)
                     _log(f"Users 시트 읽기 성공: {len(users_df)}행, 컬럼={list(users_df.columns)}")
@@ -131,7 +126,6 @@ def load_data():
                 except Exception as e_users:
                     _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
 
-                # ---- Repository 시트: 시트를 유일한 진실(source of truth)로 신뢰 ----
                 try:
                     repo_df = conn.read(worksheet="Repository", ttl=0)
                     _log(f"Repository 시트 읽기 성공: {len(repo_df)}행, 컬럼={list(repo_df.columns)}")
@@ -170,7 +164,6 @@ def load_data():
                     _log(f"❌ Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
                     _log("⚠️ 시트 읽기 실패로 인해 로컬 캐시 데이터를 임시로 유지합니다(비상용).", "warn")
 
-                # ---- Categories 시트: 사이드바 [분야] 필터 항목을 구글 시트에서 관리 ----
                 try:
                     cat_df = conn.read(worksheet="Categories", ttl=0)
                     _log(f"Categories 시트 읽기 성공: {len(cat_df)}행, 컬럼={list(cat_df.columns)}")
@@ -398,6 +391,16 @@ def inject_design_system():
         box-shadow: var(--shadow-lg);
     }
 
+    /* 로그인 화면 카드: st.container(border=True)가 만드는 실제 wrapper에 스타일 적용 */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-hero-inner) {
+        border-radius: 24px !important;
+        box-shadow: var(--shadow-xl) !important;
+        padding: 12px 24px 24px 24px !important;
+        animation: fadeInUp 0.7s ease-out;
+        margin-top: 24px;
+    }
+    .login-hero-inner { position: relative; }
+
     .project-card {
         background-color: var(--card);
         padding: 16px;
@@ -420,20 +423,6 @@ def inject_design_system():
         to { opacity: 1; transform: translateY(0); }
     }
 
-    /* 로그인 화면 히어로 영역 */
-    .login-hero {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 24px;
-        padding: 28px 36px 36px 36px;
-        box-shadow: var(--shadow-xl);
-        position: relative;
-        animation: fadeInUp 0.7s ease-out;
-        margin-top: 24px;
-    }
-    .login-hero > * { position: relative; z-index: 1; }
-
-    /* Streamlit 이미지 컨테이너 자체의 불필요한 배경/여백 제거 (로고 상단 흰 박스 대응) */
     div[data-testid="stImage"] {
         background: transparent !important;
         box-shadow: none !important;
@@ -445,11 +434,6 @@ def inject_design_system():
         display: block;
         margin: 0 auto;
         background: transparent !important;
-    }
-    div[data-testid="element-container"]:has(div[data-testid="stImage"]) {
-        background: transparent !important;
-        box-shadow: none !important;
-        margin-bottom: 0 !important;
     }
 
     #realtime-timer-badge {
@@ -540,81 +524,81 @@ inject_design_system()
 def show_login_page():
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        st.markdown("<div class='login-hero'>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("<div class='login-hero-inner'>", unsafe_allow_html=True)
 
-        # 로고: 컬럼 중첩 없이 단순 표시 (흰 박스 원인이 될 수 있는 컨테이너 중첩 최소화)
-        _, logo_col, _ = st.columns([1, 1.2, 1])
-        with logo_col:
-            st.image(LOGO_IMAGE, width=200)
+            _, logo_col, _ = st.columns([1, 1.2, 1])
+            with logo_col:
+                st.image(LOGO_IMAGE, width=200)
 
-        st.markdown("""
-            <div style='text-align:center; margin-top:10px;'>
-                <div class='section-badge' style='margin-bottom:14px;'>
-                    <span class='dot'></span>
-                    <span class='label'>Public Dev Repository</span>
+            st.markdown("""
+                <div style='text-align:center; margin-top:10px;'>
+                    <div class='section-badge' style='margin-bottom:14px;'>
+                        <span class='dot'></span>
+                        <span class='label'>Public Dev Repository</span>
+                    </div>
                 </div>
-            </div>
-            <h2 style='text-align: center; margin-top: 4px;'>
-                공공 개발 산출물 <span class='gradient-text'>저장소</span>
-            </h2>
-            <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>
-                대학 구성원의 개발 산출물을 안전하게 공유하고 관리하세요
-            </p>
-        """, unsafe_allow_html=True)
-        st.write("<br>", unsafe_allow_html=True)
+                <h2 style='text-align: center; margin-top: 4px;'>
+                    공공 개발 산출물 <span class='gradient-text'>저장소</span>
+                </h2>
+                <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>
+                    대학 구성원의 개발 산출물을 안전하게 공유하고 관리하세요
+                </p>
+            """, unsafe_allow_html=True)
+            st.write("<br>", unsafe_allow_html=True)
 
-        tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
+            tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
 
-        with tab_login:
-            with st.form("login_form"):
-                user_id = st.text_input("ID 또는 이메일", key="login_id")
-                password = st.text_input("패스워드", type="password", key="login_pw")
-                st.write("<br>", unsafe_allow_html=True)
-                login_submit = st.form_submit_button("로그인", use_container_width=True)
+            with tab_login:
+                with st.form("login_form"):
+                    user_id = st.text_input("ID 또는 이메일", key="login_id")
+                    password = st.text_input("패스워드", type="password", key="login_pw")
+                    st.write("<br>", unsafe_allow_html=True)
+                    login_submit = st.form_submit_button("로그인", use_container_width=True)
 
-            if login_submit:
-                users_db = st.session_state['app_data']['users_db']
-                user_info = users_db.get(user_id)
-                if user_info is None or user_info.get("password") != password:
-                    st.error("아이디가 존재하지 않거나 비밀번호가 틀렸습니다.")
-                elif not user_info.get("approved", False):
-                    st.warning("⏳ 아직 관리자 승인이 완료되지 않은 계정입니다. 관리자 승인 후 로그인해 주세요.")
-                else:
-                    st.session_state['logged_in'] = True
-                    st.session_state['user_id'] = user_id
-                    st.session_state['last_activity'] = now_kst()
-                    st.query_params["user_session"] = user_id
-                    st.rerun()
+                if login_submit:
+                    users_db = st.session_state['app_data']['users_db']
+                    user_info = users_db.get(user_id)
+                    if user_info is None or user_info.get("password") != password:
+                        st.error("아이디가 존재하지 않거나 비밀번호가 틀렸습니다.")
+                    elif not user_info.get("approved", False):
+                        st.warning("⏳ 아직 관리자 승인이 완료되지 않은 계정입니다. 관리자 승인 후 로그인해 주세요.")
+                    else:
+                        st.session_state['logged_in'] = True
+                        st.session_state['user_id'] = user_id
+                        st.session_state['last_activity'] = now_kst()
+                        st.query_params["user_session"] = user_id
+                        st.rerun()
 
-        with tab_signup:
-            with st.form("signup_form"):
-                new_dept = st.text_input("부서명", key="signup_dept")
-                new_manager = st.text_input("담당자명", key="signup_manager")
-                new_id = st.text_input("새 ID", key="signup_id")
-                new_pw = st.text_input("새 패스워드", type="password", key="signup_pw")
-                new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk")
-                signup_submit = st.form_submit_button("계정 생성하기", use_container_width=True)
+            with tab_signup:
+                with st.form("signup_form"):
+                    new_dept = st.text_input("부서명", key="signup_dept")
+                    new_manager = st.text_input("담당자명", key="signup_manager")
+                    new_id = st.text_input("새 ID", key="signup_id")
+                    new_pw = st.text_input("새 패스워드", type="password", key="signup_pw")
+                    new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk")
+                    signup_submit = st.form_submit_button("계정 생성하기", use_container_width=True)
 
-            if signup_submit:
-                users_db = st.session_state['app_data']['users_db']
-                if not new_dept.strip() or not new_manager.strip() or not new_id.strip() or not new_pw.strip():
-                    st.error("부서명, 담당자명, 아이디, 비밀번호는 모두 필수 입력 항목입니다.")
-                elif new_id in users_db:
-                    st.error("이미 사용 중인 아이디입니다.")
-                elif new_pw != new_pw_check:
-                    st.error("비밀번호가 일치하지 않습니다.")
-                else:
-                    st.session_state['app_data']['users_db'][new_id] = {
-                        "password": new_pw,
-                        "dept": new_dept.strip(),
-                        "manager": new_manager.strip(),
-                        "approved": False
-                    }
-                    save_data(st.session_state['app_data'])
-                    if st.session_state.get('last_save_status') != "fail":
-                        st.success("계정 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.")
+                if signup_submit:
+                    users_db = st.session_state['app_data']['users_db']
+                    if not new_dept.strip() or not new_manager.strip() or not new_id.strip() or not new_pw.strip():
+                        st.error("부서명, 담당자명, 아이디, 비밀번호는 모두 필수 입력 항목입니다.")
+                    elif new_id in users_db:
+                        st.error("이미 사용 중인 아이디입니다.")
+                    elif new_pw != new_pw_check:
+                        st.error("비밀번호가 일치하지 않습니다.")
+                    else:
+                        st.session_state['app_data']['users_db'][new_id] = {
+                            "password": new_pw,
+                            "dept": new_dept.strip(),
+                            "manager": new_manager.strip(),
+                            "approved": False
+                        }
+                        save_data(st.session_state['app_data'])
+                        if st.session_state.get('last_save_status') != "fail":
+                            st.success("계정 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ==========================================
@@ -699,25 +683,25 @@ def show_main_page():
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("시각화할 프로젝트 데이터가 부족합니다.")
-                with chart_col2:
-                    with st.container(border=True):
-                        st.markdown("##### 분야별 프로젝트 분포")
-                        if repo_data:
-                            df_repo = pd.DataFrame(repo_data)
-                            cat_counts = df_repo.get('category', pd.Series(['미분류'] * len(df_repo))).value_counts().reset_index()
-                            cat_counts.columns = ['분야', '건수']
-                            fig_pie = px.pie(
-                                cat_counts, values='건수', names='분야', hole=0.65,
-                                color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
-                            )
-                            fig_pie.update_layout(
-                                height=260, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
-                                font=dict(family="Pretendard, sans-serif", color="#0F172A"),
-                                paper_bgcolor='rgba(0,0,0,0)'
-                            )
-                            st.plotly_chart(fig_pie, use_container_width=True)
-                        else:
-                            st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
+        with chart_col2:
+            with st.container(border=True):
+                st.markdown("##### 분야별 프로젝트 분포")
+                if repo_data:
+                    df_repo = pd.DataFrame(repo_data)
+                    cat_counts = df_repo.get('category', pd.Series(['미분류'] * len(df_repo))).value_counts().reset_index()
+                    cat_counts.columns = ['분야', '건수']
+                    fig_pie = px.pie(
+                        cat_counts, values='건수', names='분야', hole=0.65,
+                        color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
+                    )
+                    fig_pie.update_layout(
+                        height=260, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
+                        font=dict(family="Pretendard, sans-serif", color="#0F172A"),
+                        paper_bgcolor='rgba(0,0,0,0)'
+                    )
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                else:
+                    st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
         st.markdown("""
