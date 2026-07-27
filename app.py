@@ -2,7 +2,7 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pickle
 import os
 import ast
@@ -15,8 +15,16 @@ import streamlit.components.v1 as components
 LOGO_IMAGE = "logo-main03_1.png"
 DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
+KST = timezone(timedelta(hours=9))
 
 st.set_page_config(page_title="공공 개발 산출물 저장소", layout="wide", initial_sidebar_state="expanded")
+
+
+def now_kst():
+    """한국 표준시(KST, UTC+9) 기준 현재 시각을 반환합니다.
+    Streamlit Cloud 서버는 UTC 기준으로 동작하므로, 화면에 표시되는 시각과
+    실제 한국 시간의 오차를 없애기 위해 이 함수를 모든 시각 표기에 공통으로 사용합니다."""
+    return datetime.now(KST)
 
 
 # ==========================================
@@ -24,7 +32,9 @@ st.set_page_config(page_title="공공 개발 산출물 저장소", layout="wide"
 # ==========================================
 def load_data():
     local_data = {
-        "users_db": {"admin": "password1234"},
+        "users_db": {
+            "admin": {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+        },
         "repository": [],
         "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"],
         "deleted_ids": []
@@ -38,8 +48,30 @@ def load_data():
     if 'deleted_ids' not in local_data:
         local_data['deleted_ids'] = []
 
+    # ---- 구버전(단순 "ID: 비밀번호" 문자열) 데이터 구조를 신버전(dict) 구조로 자동 마이그레이션 ----
+    migrated_users = {}
+    for uid, uval in local_data.get('users_db', {}).items():
+        if isinstance(uval, str):
+            # 구버전 데이터: 비밀번호 문자열만 있던 계정 → 부서/담당자 정보 없음, 승인 대기 상태로 전환
+            is_admin_account = (uid == "admin")
+            migrated_users[uid] = {
+                "password": uval,
+                "dept": "시스템관리자" if is_admin_account else "",
+                "manager": "관리자" if is_admin_account else "",
+                "approved": True if is_admin_account else False
+            }
+        elif isinstance(uval, dict):
+            uval.setdefault("dept", "")
+            uval.setdefault("manager", "")
+            uval.setdefault("approved", uid == "admin")
+            migrated_users[uid] = uval
+    if "admin" not in migrated_users:
+        migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+    local_data['users_db'] = migrated_users
+
     local_users_before_merge = dict(local_data['users_db'])
     local_repo_before_merge = list(local_data['repository'])
+    local_categories_before_merge = list(local_data.get('categories', []))
 
     st.session_state['db_mode'] = "Local File"
     st.session_state['gsheets_debug_log'] = []
@@ -59,9 +91,6 @@ def load_data():
 
         if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
             _log("st.secrets에 [connections.gsheets] 설정 발견 → Google Sheets 모드로 전환 시도")
-            gsheets_keys = list(st.secrets["connections"]["gsheets"].keys())
-            _log(f"secrets.connections.gsheets 에 등록된 키 목록: {gsheets_keys}")
-
             st.session_state['db_mode'] = "Google Sheets"
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -71,30 +100,39 @@ def load_data():
                 conn = None
 
             if conn is not None:
-                # ---- Users 시트 ----
+                # ---- Users 시트: ID, Password, Dept, Manager, Approved 5개 컬럼 구조 ----
                 try:
                     users_df = conn.read(worksheet="Users", ttl=0)
                     _log(f"Users 시트 읽기 성공: {len(users_df)}행, 컬럼={list(users_df.columns)}")
-                    if not users_df.empty:
-                        if 'ID' not in users_df.columns or 'Password' not in users_df.columns:
-                            _log(f"⚠️ Users 시트에 'ID'/'Password' 헤더가 없습니다. 실제 컬럼명: {list(users_df.columns)}", "warn")
-                        else:
-                            users_df = users_df[['ID', 'Password']].dropna(subset=['ID'])
-                            sheet_users = dict(zip(users_df['ID'].astype(str), users_df['Password'].astype(str)))
-                            merged_users = dict(sheet_users)
-                            for uid, pw in local_users_before_merge.items():
-                                if uid not in merged_users:
-                                    merged_users[uid] = pw
-                            local_data['users_db'] = merged_users
-                            _log(f"Users 병합 완료: 시트 {len(sheet_users)}건 + 로컬 전용 {len(merged_users) - len(sheet_users)}건")
+                    required_cols = {'ID', 'Password'}
+                    if not users_df.empty and required_cols.issubset(set(users_df.columns)):
+                        users_df = users_df.dropna(subset=['ID'])
+                        merged_users = {}
+                        for _, row in users_df.iterrows():
+                            uid = str(row['ID'])
+                            pw = str(row['Password'])
+                            dept = str(row['Dept']) if 'Dept' in users_df.columns and pd.notna(row.get('Dept')) else ""
+                            manager = str(row['Manager']) if 'Manager' in users_df.columns and pd.notna(row.get('Manager')) else ""
+                            approved_raw = row.get('Approved') if 'Approved' in users_df.columns else False
+                            approved = str(approved_raw).strip().upper() in ("TRUE", "1", "예", "Y")
+                            if uid == "admin":
+                                approved = True
+                            merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved}
+                        for uid, uinfo in local_users_before_merge.items():
+                            if uid not in merged_users:
+                                merged_users[uid] = uinfo
+                        if "admin" not in merged_users:
+                            merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+                        local_data['users_db'] = merged_users
+                        _log(f"Users 병합 완료: 총 {len(merged_users)}건")
                     else:
-                        _log("ℹ️ Users 시트가 비어 있습니다(헤더만 있고 데이터 행 없음). admin 계정만 로컬 기본값으로 사용됩니다.")
+                        _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
+                        if not users_df.empty:
+                            _log(f"⚠️ 실제 컬럼명: {list(users_df.columns)} (필요: ID, Password, Dept, Manager, Approved)", "warn")
                 except Exception as e_users:
                     _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
 
-                # ---- Repository 시트: Google Sheets 모드에서는 시트를 유일한 진실(source of truth)로 신뢰 ----
-                # 로컬 pickle 캐시와 deleted_ids를 강제 병합하지 않음으로써,
-                # "삭제했는데 재시작하면 되살아나는" 문제를 근본적으로 차단함
+                # ---- Repository 시트: 시트를 유일한 진실(source of truth)로 신뢰 ----
                 try:
                     repo_df = conn.read(worksheet="Repository", ttl=0)
                     _log(f"Repository 시트 읽기 성공: {len(repo_df)}행, 컬럼={list(repo_df.columns)}")
@@ -114,7 +152,6 @@ def load_data():
                             except Exception:
                                 s_item['feedbacks'] = []
 
-                            # 파일 바이너리(file_data)는 시트에 저장하지 않으므로 로컬 캐시에서만 보완
                             matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
                             if matching_local and 'file_data' in matching_local:
                                 s_item['file_data'] = matching_local['file_data']
@@ -128,13 +165,30 @@ def load_data():
                     elif not repo_df.empty and 'id' not in repo_df.columns:
                         _log(f"⚠️ Repository 시트에 'id' 헤더가 없습니다. 실제 컬럼명: {list(repo_df.columns)}", "warn")
                     else:
-                        # 시트가 비어있다면 로컬 캐시 여부와 무관하게 빈 상태로 동기화
-                        # (시트가 유일한 진실이므로, 시트가 비었다면 실제로 없는 것이 맞음)
                         local_data['repository'] = []
-                        _log("ℹ️ Repository 시트가 비어 있습니다(헤더만 있고 데이터 행 없음). 정상 상황일 수 있습니다.")
+                        _log("ℹ️ Repository 시트가 비어 있습니다(헤더만 있고 데이터 행 없음).")
                 except Exception as e_repo:
                     _log(f"❌ Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
                     _log("⚠️ 시트 읽기 실패로 인해 로컬 캐시 데이터를 임시로 유지합니다(비상용).", "warn")
+
+                # ---- Categories 시트: 사이드바 [분야] 필터 항목을 구글 시트에서 관리 ----
+                try:
+                    cat_df = conn.read(worksheet="Categories", ttl=0)
+                    _log(f"Categories 시트 읽기 성공: {len(cat_df)}행, 컬럼={list(cat_df.columns)}")
+                    if not cat_df.empty and 'category' in cat_df.columns:
+                        cat_list = cat_df['category'].dropna().astype(str).tolist()
+                        if "전체" not in cat_list:
+                            cat_list.insert(0, "전체")
+                        local_data['categories'] = cat_list
+                        _log(f"Categories 로드 완료(시트 기준): 총 {len(cat_list)}건")
+                    elif not cat_df.empty and 'category' not in cat_df.columns:
+                        _log(f"⚠️ Categories 시트에 'category' 헤더가 없습니다. 실제 컬럼명: {list(cat_df.columns)}", "warn")
+                    else:
+                        _log("ℹ️ Categories 시트가 비어 있습니다. 로컬 기본 분야 목록을 사용합니다.", "warn")
+                except Exception as e_cat:
+                    _log(f"❌ Categories 시트 읽기 실패: {_fmt_err(e_cat, 'categories_read')}", "error")
+                    _log("⚠️ Categories 시트가 아직 없다면, 구글 스프레드시트에 'Categories'라는 이름의 탭을 만들고 A1 셀에 'category' 헤더를 입력해주세요.", "warn")
+                    local_data['categories'] = local_categories_before_merge
         else:
             _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
     except Exception as e:
@@ -152,7 +206,16 @@ def save_data(data):
             from streamlit_gsheets import GSheetsConnection
             conn = st.connection("gsheets", type=GSheetsConnection)
 
-            users_df = pd.DataFrame(list(data['users_db'].items()), columns=['ID', 'Password'])
+            users_rows = []
+            for uid, uinfo in data['users_db'].items():
+                users_rows.append({
+                    "ID": uid,
+                    "Password": uinfo.get("password", ""),
+                    "Dept": uinfo.get("dept", ""),
+                    "Manager": uinfo.get("manager", ""),
+                    "Approved": bool(uinfo.get("approved", False))
+                })
+            users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved"])
             conn.update(worksheet="Users", data=users_df)
 
             if data['repository']:
@@ -165,6 +228,10 @@ def save_data(data):
                 empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks'])
                 conn.update(worksheet="Repository", data=empty_df)
 
+            cat_list = data.get('categories', [])
+            cat_df = pd.DataFrame({"category": cat_list})
+            conn.update(worksheet="Categories", data=cat_df)
+
             st.session_state['last_save_status'] = "success"
         except Exception as e:
             full_tb = traceback.format_exc()
@@ -172,7 +239,6 @@ def save_data(data):
             err_txt = f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'}"
             st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
             st.session_state['last_save_status'] = "fail"
-            # 삭제/수정 등 중요한 조작 직후 저장이 실패하면 사용자가 즉시 알 수 있도록 화면에 경고
             st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
     else:
         st.session_state['last_save_status'] = "local_only"
@@ -187,7 +253,7 @@ if 'logged_in' not in st.session_state:
 if not st.session_state['logged_in'] and "user_session" in st.query_params:
     st.session_state['logged_in'] = True
     st.session_state['user_id'] = st.query_params["user_session"]
-    st.session_state['last_activity'] = datetime.now()
+    st.session_state['last_activity'] = now_kst()
 
 
 # ==========================================
@@ -355,17 +421,29 @@ def inject_design_system():
         to { opacity: 1; transform: translateY(0); }
     }
 
+    /* 로그인 화면 히어로 영역: 로고 위에 불필요한 빈 사각형이 생기지 않도록
+       배경/그림자만 담당하고, 내부 여백을 명확히 재정의 */
     .login-hero {
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: 24px;
-        padding: 44px 36px 36px 36px;
+        padding: 28px 36px 36px 36px;
         box-shadow: var(--shadow-xl);
         position: relative;
         animation: fadeInUp 0.7s ease-out;
         margin-top: 24px;
+        overflow: hidden;
+    }
+    .login-hero::before,
+    .login-hero::after {
+        content: none !important;
+        display: none !important;
     }
     .login-hero > * { position: relative; z-index: 1; }
+    .login-hero img {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
 
     #realtime-timer-badge {
         background: linear-gradient(135deg, var(--foreground), #1e293b);
@@ -485,30 +563,42 @@ def show_login_page():
             st.write("<br>", unsafe_allow_html=True)
             if st.button("로그인", use_container_width=True):
                 users_db = st.session_state['app_data']['users_db']
-                if user_id in users_db and users_db[user_id] == password:
+                user_info = users_db.get(user_id)
+                if user_info is None or user_info.get("password") != password:
+                    st.error("아이디가 존재하지 않거나 비밀번호가 틀렸습니다.")
+                elif not user_info.get("approved", False):
+                    st.warning("⏳ 아직 관리자 승인이 완료되지 않은 계정입니다. 관리자 승인 후 로그인해 주세요.")
+                else:
                     st.session_state['logged_in'] = True
                     st.session_state['user_id'] = user_id
-                    st.session_state['last_activity'] = datetime.now()
+                    st.session_state['last_activity'] = now_kst()
                     st.query_params["user_session"] = user_id
                     st.rerun()
-                else:
-                    st.error("아이디가 존재하지 않거나 비밀번호가 틀렸습니다.")
 
         with tab_signup:
+            new_dept = st.text_input("부서명", key="signup_dept")
+            new_manager = st.text_input("담당자명", key="signup_manager")
             new_id = st.text_input("새 ID", key="signup_id")
             new_pw = st.text_input("새 패스워드", type="password", key="signup_pw")
             new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk")
             if st.button("계정 생성하기", use_container_width=True):
                 users_db = st.session_state['app_data']['users_db']
-                if new_id in users_db:
+                if not new_dept.strip() or not new_manager.strip() or not new_id.strip() or not new_pw.strip():
+                    st.error("부서명, 담당자명, 아이디, 비밀번호는 모두 필수 입력 항목입니다.")
+                elif new_id in users_db:
                     st.error("이미 사용 중인 아이디입니다.")
                 elif new_pw != new_pw_check:
-                    st.error("비밀번호가 불일치합니다.")
+                    st.error("비밀번호가 일치하지 않습니다.")
                 else:
-                    st.session_state['app_data']['users_db'][new_id] = new_pw
+                    st.session_state['app_data']['users_db'][new_id] = {
+                        "password": new_pw,
+                        "dept": new_dept.strip(),
+                        "manager": new_manager.strip(),
+                        "approved": False
+                    }
                     save_data(st.session_state['app_data'])
                     if st.session_state.get('last_save_status') != "fail":
-                        st.success("계정 생성 완료. 로그인해 주세요.")
+                        st.success("계정 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -517,7 +607,7 @@ def show_login_page():
 # 4. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
-    now = datetime.now()
+    now = now_kst()
     if now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
         st.query_params.clear()
         st.session_state['logged_in'] = False
@@ -547,10 +637,10 @@ def show_main_page():
             inject_timer_js()
         with r3:
             if st.button("연장", use_container_width=True):
-                st.session_state['last_activity'] = datetime.now()
+                st.session_state['last_activity'] = now_kst()
                 st.rerun()
         with r4:
-            st.markdown(f"<div style='text-align:right; font-size:12px; color:var(--muted-foreground); padding-top:10px; font-family:var(--font-mono);'>기준일자: {datetime.now().strftime('%Y. %m. %d. %H:%M')}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:right; font-size:12px; color:var(--muted-foreground); padding-top:10px; font-family:var(--font-mono);'>기준일자: {now_kst().strftime('%Y. %m. %d. %H:%M')}</div>", unsafe_allow_html=True)
 
     repo_data = st.session_state['app_data']['repository']
     total_projects = len(repo_data)
@@ -580,7 +670,7 @@ def show_main_page():
             with st.container(border=True):
                 st.markdown("##### 프로젝트 활동 현황")
                 if repo_data:
-                    dates = pd.date_range(end=datetime.today(), periods=7).strftime("%m-%d").tolist()
+                    dates = pd.date_range(end=now_kst().replace(tzinfo=None), periods=7).strftime("%m-%d").tolist()
                     trend_df = pd.DataFrame({
                         "일자": dates,
                         "커밋 수": [0, 0, 0, 0, 0, 0, total_projects * 2]
@@ -672,7 +762,7 @@ def show_main_page():
                             "category": proj_cat,
                             "desc": proj_desc,
                             "author": st.session_state.get('user_id', '익명'),
-                            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "date": now_kst().strftime("%Y-%m-%d %H:%M"),
                             "filename": uploaded_file.name,
                             "file_data": uploaded_file.read(),
                             "feedbacks": []
@@ -757,7 +847,7 @@ def show_main_page():
                         fb_input = st.text_input("의견을 남겨주세요", key=f"fb_in_{item['id']}")
                         if st.button("피드백 등록", key=f"fb_btn_{item['id']}"):
                             if fb_input:
-                                item['feedbacks'].append({"user": st.session_state.get('user_id', '익명'), "time": datetime.now().strftime("%Y-%m-%d %H:%M"), "text": fb_input})
+                                item['feedbacks'].append({"user": st.session_state.get('user_id', '익명'), "time": now_kst().strftime("%Y-%m-%d %H:%M"), "text": fb_input})
                                 save_data(st.session_state['app_data'])
                                 if st.session_state.get('last_save_status') != "fail":
                                     st.rerun()
@@ -768,8 +858,37 @@ def show_main_page():
         with tab3:
             st.markdown("### 시스템 계정 관리")
             users_db = st.session_state['app_data']['users_db']
-            users_df = pd.DataFrame(list(users_db.items()), columns=['사용자 ID', '비밀번호'])
+
+            users_rows = []
+            for uid, uinfo in users_db.items():
+                users_rows.append({
+                    "사용자 ID": uid,
+                    "부서명": uinfo.get("dept", ""),
+                    "담당자명": uinfo.get("manager", ""),
+                    "비밀번호": uinfo.get("password", ""),
+                    "승인 여부": "✅ 승인됨" if uinfo.get("approved", False) else "⏳ 대기중"
+                })
+            users_df = pd.DataFrame(users_rows)
             st.dataframe(users_df, use_container_width=True, hide_index=True)
+
+            st.markdown("#### 회원가입 승인 대기 목록")
+            pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", False)]
+            if not pending_users:
+                st.info("승인 대기 중인 계정이 없습니다.")
+            else:
+                for uid in pending_users:
+                    uinfo = users_db[uid]
+                    with st.container(border=True):
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')})")
+                        with c2:
+                            if st.button("승인", key=f"approve_{uid}", use_container_width=True):
+                                st.session_state['app_data']['users_db'][uid]["approved"] = True
+                                save_data(st.session_state['app_data'])
+                                if st.session_state.get('last_save_status') != "fail":
+                                    st.success(f"[{uid}] 계정이 승인되었습니다.")
+                                    st.rerun()
 
             st.markdown("#### 사용자 계정 삭제")
             target_user = st.selectbox("삭제할 사용자 선택", options=[u for u in users_db.keys() if u != 'admin'])
@@ -783,6 +902,7 @@ def show_main_page():
 
             st.markdown("---")
             st.markdown("### 사이드바 [분야] 필터 항목 구성")
+            st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 시트에서 직접 수정하셔도 되고, 아래에서 추가/삭제하시면 시트에도 자동 반영됩니다.")
             current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
             st.write("현재 등록된 분야 목록:", current_cats)
 
