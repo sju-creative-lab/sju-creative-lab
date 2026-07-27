@@ -124,12 +124,13 @@ def inject_timer_js():
     """, height=0)
 
 # ==========================================
-# 2-1. 디자인 토큰 & 전역 스타일 (Minimalist Modern 디자인 시스템)
+# 2-1. 디자인 토큰 & 전역 스타일 (Minimalist Modern 디자인 시스템 - 한글 최적화)
 # ==========================================
 def inject_design_system():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
     :root {
         --background: #FAFAFA;
@@ -143,6 +144,10 @@ def inject_design_system():
         --card: #FFFFFF;
         --ring: #0052FF;
 
+        --font-display: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        --font-body: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        --font-mono: 'JetBrains Mono', 'Pretendard', monospace;
+
         --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
         --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
         --shadow-lg: 0 10px 15px rgba(0,0,0,0.08);
@@ -151,24 +156,27 @@ def inject_design_system():
         --shadow-accent-lg: 0 8px 24px rgba(0,82,255,0.35);
     }
 
-    /* ---------- 전역 배경 & 타이포 ---------- */
+    /* ---------- 전역 배경 & 타이포 (한국어 최적화: Pretendard) ---------- */
+    html, body, .stApp, [class*="css"] {
+        font-family: var(--font-body) !important;
+    }
     .stApp {
         background-color: var(--background);
         color: var(--foreground);
-        font-family: 'Inter', system-ui, sans-serif;
     }
-    h1, h2, h3, .display-font {
-        font-family: 'Calistoga', Georgia, serif !important;
+    h1, h2, h3 {
+        font-family: var(--font-display) !important;
+        font-weight: 800;
         letter-spacing: -0.02em;
         color: var(--foreground);
     }
     h4, h5, h6 {
-        font-family: 'Inter', system-ui, sans-serif !important;
-        font-weight: 600;
+        font-family: var(--font-display) !important;
+        font-weight: 700;
         letter-spacing: -0.01em;
     }
     code, .mono-label {
-        font-family: 'JetBrains Mono', monospace !important;
+        font-family: var(--font-mono) !important;
     }
 
     /* ---------- 스크롤바 살짝 다듬기 ---------- */
@@ -182,17 +190,6 @@ def inject_design_system():
         background-clip: text;
         color: transparent;
         display: inline-block;
-    }
-    .gradient-underline-wrap { position: relative; display: inline-block; }
-    .gradient-underline {
-        position: absolute;
-        bottom: -0.15rem;
-        left: 0;
-        height: 0.5rem;
-        width: 100%;
-        border-radius: 0.125rem;
-        background: linear-gradient(to right, rgba(0,82,255,0.15), rgba(77,124,255,0.1));
-        z-index: -1;
     }
 
     /* ---------- 섹션 라벨(배지) ---------- */
@@ -210,13 +207,15 @@ def inject_design_system():
         width: 8px; height: 8px; border-radius: 50%;
         background: var(--accent);
         animation: pulse-dot 2s infinite;
+        flex-shrink: 0;
     }
     .section-badge .label {
-        font-family: 'JetBrains Mono', monospace;
+        font-family: var(--font-mono);
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.15em;
         color: var(--accent);
+        white-space: nowrap;
     }
     @keyframes pulse-dot {
         0%, 100% { transform: scale(1); opacity: 1; }
@@ -231,14 +230,11 @@ def inject_design_system():
         border: 1px solid var(--border);
         margin-bottom: 15px;
         box-shadow: var(--shadow-md);
-        transition: all 0.3s ease-out;
-        position: relative;
-        overflow: hidden;
+        transition: box-shadow 0.3s ease-out, transform 0.3s ease-out;
     }
     .metric-card:hover {
-        box-shadow: var(--shadow-xl);
+        box-shadow: var(--shadow-lg);
         transform: translateY(-3px);
-        border-color: rgba(0,82,255,0.25);
     }
     .panel-card {
         background-color: var(--card);
@@ -263,12 +259,11 @@ def inject_design_system():
         flex-direction: column;
         justify-content: space-between;
         box-shadow: var(--shadow-sm);
-        transition: all 0.25s ease-out;
+        transition: box-shadow 0.25s ease-out, transform 0.25s ease-out;
         animation: fadeInUp 0.6s ease-out;
     }
     .project-card:hover {
         box-shadow: var(--shadow-accent);
-        border-color: rgba(0,82,255,0.3);
         transform: translateY(-2px);
     }
     @keyframes fadeInUp {
@@ -297,6 +292,7 @@ def inject_design_system():
         opacity: 0.18;
         filter: blur(80px);
         border-radius: 50%;
+        pointer-events: none;
     }
     .invert-section h4, .invert-section h5, .invert-section h6, .invert-section p, .invert-section div {
         color: #F8FAFC !important;
@@ -314,29 +310,32 @@ def inject_design_system():
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: 24px;
-        padding: 40px 36px;
+        padding: 44px 36px 36px 36px;
         box-shadow: var(--shadow-xl);
         position: relative;
         overflow: hidden;
         animation: fadeInUp 0.7s ease-out;
     }
-    .login-hero::after {
-        content: "";
+    /* 은은한 배경 글로우만 유지 (불필요한 사각형 요소 제거) */
+    .login-hero .bg-glow {
         position: absolute;
-        bottom: -80px; left: -80px;
+        bottom: -90px; left: -90px;
         width: 220px; height: 220px;
-        background: radial-gradient(circle, rgba(0,82,255,0.12), transparent 70%);
+        background: radial-gradient(circle, rgba(0,82,255,0.10), transparent 70%);
         border-radius: 50%;
+        pointer-events: none;
+        z-index: 0;
     }
-    .login-ring {
+    .login-hero .bg-glow-top {
         position: absolute;
-        top: -40px; right: -40px;
-        width: 120px; height: 120px;
+        top: -70px; right: -70px;
+        width: 180px; height: 180px;
+        background: radial-gradient(circle, rgba(77,124,255,0.10), transparent 70%);
         border-radius: 50%;
-        border: 2px dashed rgba(0,82,255,0.25);
-        animation: spin 60s linear infinite;
+        pointer-events: none;
+        z-index: 0;
     }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .login-hero > * { position: relative; z-index: 1; }
 
     /* ---------- 타이머 배지 ---------- */
     #realtime-timer-badge {
@@ -344,7 +343,7 @@ def inject_design_system():
         color: white;
         text-align: center;
         padding: 8px 0;
-        font-family: 'JetBrains Mono', monospace;
+        font-family: var(--font-mono);
         font-weight: 600;
         font-size: 13px;
         border-radius: 8px;
@@ -360,11 +359,9 @@ def inject_design_system():
         text-align: center;
         border: 1px solid var(--border);
         box-shadow: var(--shadow-sm);
-        position: relative;
-        overflow: hidden;
     }
     .sidebar-brand-card .tag {
-        font-family: 'JetBrains Mono', monospace;
+        font-family: var(--font-mono);
         font-size: 20px;
         font-weight: 700;
         padding: 8px 0;
@@ -377,14 +374,11 @@ def inject_design_system():
     /* ---------- Streamlit 기본 위젯 커스터마이즈 (가능한 범위 내) ---------- */
     div[data-testid="stButton"] > button {
         border-radius: 10px !important;
-        border: 1px solid var(--border) !important;
         font-weight: 500 !important;
         transition: all 0.2s ease-out !important;
     }
     div[data-testid="stButton"] > button:hover {
         transform: translateY(-1px);
-        border-color: rgba(0,82,255,0.4) !important;
-        box-shadow: var(--shadow-accent);
         color: var(--accent) !important;
     }
     div[data-testid="stButton"] > button:active {
@@ -433,13 +427,17 @@ def show_login_page():
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         st.write("<br><br>", unsafe_allow_html=True)
-        st.markdown("<div class='login-hero'><div class='login-ring'></div>", unsafe_allow_html=True)
+        st.markdown("""
+            <div class='login-hero'>
+                <div class='bg-glow'></div>
+                <div class='bg-glow-top'></div>
+        """, unsafe_allow_html=True)
 
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
         with col_logo2: st.image(LOGO_IMAGE, use_container_width=True)
 
         st.markdown("""
-            <div style='text-align:center; margin-top:6px;'>
+            <div style='text-align:center; margin-top:10px;'>
                 <div class='section-badge' style='margin-bottom:14px;'>
                     <span class='dot'></span>
                     <span class='label'>Public Dev Repository</span>
@@ -520,7 +518,7 @@ def show_main_page():
                 st.session_state['last_activity'] = datetime.now()
                 st.rerun()
         with r4:
-            st.markdown(f"<div style='text-align:right; font-size:12px; color:var(--muted-foreground); padding-top:10px; font-family:JetBrains Mono, monospace;'>기준일자: {datetime.now().strftime('%Y. %m. %d. %H:%M')}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:right; font-size:12px; color:var(--muted-foreground); padding-top:10px; font-family:var(--font-mono);'>기준일자: {datetime.now().strftime('%Y. %m. %d. %H:%M')}</div>", unsafe_allow_html=True)
     repo_data = st.session_state['app_data']['repository']
     total_projects = len(repo_data)
     unique_authors = len(set([p['author'] for p in repo_data]))
@@ -533,11 +531,11 @@ def show_main_page():
     with tab1:
         # 1. 상단 지표 카드 5개 (빈 네모칸 제거됨)
         m1, m2, m3, m4, m5 = st.columns(5)
-        with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 프로젝트</div><div style='font-size: 28px; font-weight: bold; color: var(--foreground); font-family:Calistoga, serif;'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
-        with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: bold; color: var(--foreground); font-family:Calistoga, serif;'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
-        with m3: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: bold; color: var(--foreground); font-family:Calistoga, serif;'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 0 / 완료 0</div></div>", unsafe_allow_html=True)
-        with m4: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>Star</div><div style='font-size: 28px; font-weight: bold;' class='gradient-text'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>좋아요(로그인 사용자)</div></div>", unsafe_allow_html=True)
-        with m5: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: bold; color: var(--foreground); font-family:Calistoga, serif;'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
+        with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
+        with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
+        with m3: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 0 / 완료 0</div></div>", unsafe_allow_html=True)
+        with m4: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>Star</div><div style='font-size: 28px; font-weight: 800;' class='gradient-text'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>좋아요(로그인 사용자)</div></div>", unsafe_allow_html=True)
+        with m5: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True)
         # 2. 중단 3분할 영역 (실제 데이터 반영)
         chart_col1, chart_col2, chart_col3 = st.columns([5, 3, 2])
@@ -554,7 +552,7 @@ def show_main_page():
                 fig.update_traces(marker_color='#0052FF', marker_line_width=0)
                 fig.update_layout(
                     height=240, margin=dict(l=20, r=20, t=10, b=20),
-                    font=dict(family="Inter, sans-serif", color="#0F172A"),
+                    font=dict(family="Pretendard, sans-serif", color="#0F172A"),
                     plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
                 )
                 st.plotly_chart(fig, use_container_width=True)
@@ -574,7 +572,7 @@ def show_main_page():
                 )
                 fig_pie.update_layout(
                     height=240, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
-                    font=dict(family="Inter, sans-serif", color="#0F172A"),
+                    font=dict(family="Pretendard, sans-serif", color="#0F172A"),
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -616,9 +614,9 @@ def show_main_page():
                     st.markdown(f"""
                         <div class="project-card">
                             <div>
-                                <span style="font-family:'JetBrains Mono', monospace; font-size: 10px; color: var(--accent); background:rgba(0,82,255,0.08); padding:2px 8px; border-radius:6px;">{cat_val}</span>
+                                <span style="font-family:var(--font-mono); font-size: 10px; color: var(--accent); background:rgba(0,82,255,0.08); padding:2px 8px; border-radius:6px;">{cat_val}</span>
                                 <span style="font-size: 11px; color: #94a3b8;"> · {item['author']}</span>
-                                <h6 style="margin: 8px 0 4px 0; color: var(--foreground); font-weight: 600;">{item['title']}</h6>
+                                <h6 style="margin: 8px 0 4px 0; color: var(--foreground); font-weight: 700;">{item['title']}</h6>
                                 <p style="font-size: 12px; color: #475569; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{item['desc']}</p>
                             </div>
                             <div style="font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 8px;">
@@ -671,7 +669,7 @@ def show_main_page():
                     col_info, col_action = st.columns([4, 1])
                     with col_info:
                         c_tag = item.get('category', '일반')
-                        st.markdown(f"#### {item['title']} <span style='font-family:JetBrains Mono, monospace; font-size:11px; background:rgba(0,82,255,0.08); color:var(--accent); padding:3px 10px; border-radius:999px; border:1px solid rgba(0,82,255,0.2);'>{c_tag}</span>", unsafe_allow_html=True)
+                        st.markdown(f"#### {item['title']} <span style='font-family:var(--font-mono); font-size:11px; background:rgba(0,82,255,0.08); color:var(--accent); padding:3px 10px; border-radius:999px; border:1px solid rgba(0,82,255,0.2);'>{c_tag}</span>", unsafe_allow_html=True)
                         st.markdown(f"**공유자:** {item['author']} | **등록일:** {item['date']}")
                         st.write(item['desc'])
                     with col_action:
@@ -754,30 +752,40 @@ def show_main_page():
                     save_data(st.session_state['app_data'])
                     st.success(f"분야 [{rem_cat}]가 삭제되었습니다.")
                     st.rerun()
-# 사이드바 구성 (AI 서정 실험실 및 대학 직원 맞춤형 텍스트 적용)
-with st.sidebar:
-    col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
-    with col_side2: st.image(LOGO_IMAGE, use_container_width=True)
-    st.markdown("<h3 style='text-align:center;'>AI 서정 실험실</h3>", unsafe_allow_html=True)
-    st.markdown("---")
-    
-    cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
-    st.selectbox("분야", options=cat_options)
-    st.selectbox("정렬 기준", ["최근 활동순", "별점 높은순", "이슈 많은순"])
-    st.text_input("검색어", placeholder="프로젝트 검색...")
-    cb1, cb2 = st.columns(2)
-    cb1.button("검색", use_container_width=True)
-    cb2.button("초기화", use_container_width=True)
-    
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("""
-        <div class='sidebar-brand-card'>
-            <h4 style='color: #0f172a; margin-bottom: 5px;'>AI 서정 실험실</h4>
-            <p style='font-size: 13px; color: #64748b;'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p>
-            <div class='tag'>Data & AI</div>
-        </div>
-    """, unsafe_allow_html=True)
+
+# ==========================================
+# 5. 사이드바 구성 (로그인 상태일 때만 노출)
+# ==========================================
+def show_sidebar():
+    with st.sidebar:
+        col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
+        with col_side2: st.image(LOGO_IMAGE, use_container_width=True)
+        st.markdown("<h3 style='text-align:center;'>AI 서정 실험실</h3>", unsafe_allow_html=True)
+        st.markdown("---")
+        
+        cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
+        st.selectbox("분야", options=cat_options)
+        st.selectbox("정렬 기준", ["최근 활동순", "별점 높은순", "이슈 많은순"])
+        st.text_input("검색어", placeholder="프로젝트 검색...")
+        cb1, cb2 = st.columns(2)
+        cb1.button("검색", use_container_width=True)
+        cb2.button("초기화", use_container_width=True)
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("""
+            <div class='sidebar-brand-card'>
+                <h4 style='color: #0f172a; margin-bottom: 5px;'>AI 서정 실험실</h4>
+                <p style='font-size: 13px; color: #64748b;'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p>
+                <div class='tag'>Data & AI</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+# ==========================================
+# 6. 최종 라우팅 (로그인 여부에 따라 사이드바 노출 제어)
+# ==========================================
 if not st.session_state['logged_in']:
+    st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
     show_login_page()
 else:
+    show_sidebar()
     show_main_page()
