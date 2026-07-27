@@ -22,7 +22,7 @@ def load_data():
         "users_db": {"admin": "password1234"}, 
         "repository": [],
         "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"],
-        "deleted_ids": []   # 삭제된 산출물 id를 기록하여 재동기화 시 되살아나지 않도록 방지
+        "deleted_ids": []
     }
     
     if os.path.exists(DATA_FILE):
@@ -32,70 +32,91 @@ def load_data():
                 local_data.update(loaded)
     if 'deleted_ids' not in local_data:
         local_data['deleted_ids'] = []
-    # 로컬(pickle)에 저장되어 있던 값을 구글 시트 병합 이전에 미리 보존
     local_users_before_merge = dict(local_data['users_db'])
     local_repo_before_merge = list(local_data['repository'])
     deleted_ids_set = set(str(x) for x in local_data['deleted_ids'])
             
     st.session_state['db_mode'] = "Local File"
+    # 진단용 로그를 세션에 축적 (관리자 화면에서만 노출)
+    st.session_state['gsheets_debug_log'] = []
+    
+    def _log(msg):
+        st.session_state['gsheets_debug_log'].append(msg)
     
     try:
         from streamlit_gsheets import GSheetsConnection
+        _log("streamlit_gsheets 패키지 import 성공")
         if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+            _log("st.secrets에 [connections.gsheets] 설정 발견 → Google Sheets 모드로 전환 시도")
             st.session_state['db_mode'] = "Google Sheets"
             conn = st.connection("gsheets", type=GSheetsConnection)
             
             try:
                 users_df = conn.read(worksheet="Users", usecols=[0,1], ttl=0)
+                _log(f"Users 시트 읽기 성공: {len(users_df)}행, 컬럼={list(users_df.columns)}")
                 if not users_df.empty:
-                    users_df = users_df.dropna(subset=['ID'])
-                    sheet_users = dict(zip(users_df['ID'].astype(str), users_df['Password'].astype(str)))
-                    # 구글 시트 결과로 완전히 덮어쓰지 않고, 로컬에만 있던(아직 시트에 반영 안 된) 계정을 합집합으로 보존
-                    merged_users = dict(sheet_users)
-                    for uid, pw in local_users_before_merge.items():
-                        if uid not in merged_users:
-                            merged_users[uid] = pw
-                    local_data['users_db'] = merged_users
-            except: pass
+                    if 'ID' not in users_df.columns or 'Password' not in users_df.columns:
+                        _log(f"⚠️ Users 시트에 'ID'/'Password' 헤더가 없습니다. 실제 컬럼명: {list(users_df.columns)} → 1행에 헤더를 입력해주세요.")
+                    else:
+                        users_df = users_df.dropna(subset=['ID'])
+                        sheet_users = dict(zip(users_df['ID'].astype(str), users_df['Password'].astype(str)))
+                        merged_users = dict(sheet_users)
+                        for uid, pw in local_users_before_merge.items():
+                            if uid not in merged_users:
+                                merged_users[uid] = pw
+                        local_data['users_db'] = merged_users
+                        _log(f"Users 병합 완료: 시트 {len(sheet_users)}건 + 로컬 전용 {len(merged_users)-len(sheet_users)}건")
+                else:
+                    _log("⚠️ Users 시트가 비어 있습니다(헤더 행도 없음). A1='ID', B1='Password'를 입력해주세요.")
+            except Exception as e_users:
+                _log(f"❌ Users 시트 읽기 실패: {e_users}")
                 
             try:
                 repo_df = conn.read(worksheet="Repository", ttl=0)
+                _log(f"Repository 시트 읽기 성공: {len(repo_df)}행, 컬럼={list(repo_df.columns)}")
                 if not repo_df.empty:
-                    repo_df = repo_df.dropna(subset=['id'])
-                    sheet_repo = repo_df.to_dict('records')
-                    
-                    merged_repo = []
-                    sheet_ids_seen = set()
-                    for s_item in sheet_repo:
-                        s_id_str = str(s_item['id'])
-                        # 삭제된 것으로 기록된 id는 구글 시트에 남아있어도 무시(재동기화 방지)
-                        if s_id_str in deleted_ids_set:
-                            continue
-                        try:
-                            if pd.isna(s_item['feedbacks']): s_item['feedbacks'] = []
-                            else: s_item['feedbacks'] = ast.literal_eval(str(s_item['feedbacks']))
-                        except:
-                            s_item['feedbacks'] = []
-                            
-                        matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
-                        if matching_local and 'file_data' in matching_local:
-                            s_item['file_data'] = matching_local['file_data']
-                        else:
-                            s_item['file_data'] = b''
+                    if 'id' not in repo_df.columns:
+                        _log(f"⚠️ Repository 시트에 'id' 헤더가 없습니다. 실제 컬럼명: {list(repo_df.columns)}")
+                    else:
+                        repo_df = repo_df.dropna(subset=['id'])
+                        sheet_repo = repo_df.to_dict('records')
                         
-                        merged_repo.append(s_item)
-                        sheet_ids_seen.add(s_id_str)
-                    
-                    # 로컬에만 있고 아직 구글 시트에 반영되지 않은(신규 업로드 등) 항목도 보존
-                    for l_item in local_repo_before_merge:
-                        l_id_str = str(l_item['id'])
-                        if l_id_str not in sheet_ids_seen and l_id_str not in deleted_ids_set:
-                            merged_repo.append(l_item)
-                    
-                    local_data['repository'] = merged_repo
-            except: pass
+                        merged_repo = []
+                        sheet_ids_seen = set()
+                        for s_item in sheet_repo:
+                            s_id_str = str(s_item['id'])
+                            if s_id_str in deleted_ids_set:
+                                continue
+                            try:
+                                if pd.isna(s_item.get('feedbacks')): s_item['feedbacks'] = []
+                                else: s_item['feedbacks'] = ast.literal_eval(str(s_item['feedbacks']))
+                            except:
+                                s_item['feedbacks'] = []
+                                
+                            matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
+                            if matching_local and 'file_data' in matching_local:
+                                s_item['file_data'] = matching_local['file_data']
+                            else:
+                                s_item['file_data'] = b''
+                            
+                            merged_repo.append(s_item)
+                            sheet_ids_seen.add(s_id_str)
+                        
+                        for l_item in local_repo_before_merge:
+                            l_id_str = str(l_item['id'])
+                            if l_id_str not in sheet_ids_seen and l_id_str not in deleted_ids_set:
+                                merged_repo.append(l_item)
+                        
+                        local_data['repository'] = merged_repo
+                        _log(f"Repository 병합 완료: 총 {len(merged_repo)}건")
+                else:
+                    _log("ℹ️ Repository 시트가 비어 있습니다(헤더 없음). 정상 상황일 수 있습니다(아직 데이터 없음).")
+            except Exception as e_repo:
+                _log(f"❌ Repository 시트 읽기 실패: {e_repo}")
+        else:
+            _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
     except Exception as e:
-        pass
+        _log(f"❌ Google Sheets 연동 초기화 자체가 실패했습니다: {e}")
     return local_data
 def save_data(data):
     with open(DATA_FILE, "wb") as f:
@@ -116,12 +137,10 @@ def save_data(data):
                 repo_df['feedbacks'] = repo_df['feedbacks'].apply(lambda x: str(x))
                 conn.update(worksheet="Repository", data=repo_df)
             else:
-                # 저장소가 완전히 비어있는 경우에도 시트를 빈 상태로 덮어써서
-                # 삭제된 항목이 시트에 남아 재동기화되는 것을 방지
                 empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks'])
                 conn.update(worksheet="Repository", data=empty_df)
         except Exception as e:
-            pass
+            st.session_state.setdefault('gsheets_debug_log', []).append(f"❌ save_data 중 Google Sheets 쓰기 실패: {e}")
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 if 'logged_in' not in st.session_state:
@@ -187,7 +206,6 @@ def inject_design_system():
         --shadow-accent-lg: 0 8px 24px rgba(0,82,255,0.35);
     }
 
-    /* ---------- 전역 배경 & 타이포 (한국어 최적화: Pretendard) ---------- */
     html, body, .stApp, [class*="css"] {
         font-family: var(--font-body) !important;
     }
@@ -210,11 +228,9 @@ def inject_design_system():
         font-family: var(--font-mono) !important;
     }
 
-    /* ---------- 스크롤바 살짝 다듬기 ---------- */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
 
-    /* ---------- 그라디언트 텍스트 ---------- */
     .gradient-text {
         background: linear-gradient(to right, var(--accent), var(--accent-secondary));
         -webkit-background-clip: text;
@@ -223,7 +239,6 @@ def inject_design_system():
         display: inline-block;
     }
 
-    /* ---------- 섹션 라벨(배지) ---------- */
     .section-badge {
         display: inline-flex;
         align-items: center;
@@ -253,7 +268,6 @@ def inject_design_system():
         50% { transform: scale(1.3); opacity: 0.7; }
     }
 
-    /* ---------- 지표 카드 (metric) ---------- */
     .metric-card {
         background-color: var(--card);
         padding: 20px;
@@ -268,7 +282,6 @@ def inject_design_system():
         transform: translateY(-3px);
     }
 
-    /* ---------- 패널 카드: st.container(border=True) 오버라이드 ---------- */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 16px !important;
         box-shadow: var(--shadow-md);
@@ -278,7 +291,6 @@ def inject_design_system():
         box-shadow: var(--shadow-lg);
     }
 
-    /* ---------- 프로젝트 카드 ---------- */
     .project-card {
         background-color: var(--card);
         padding: 16px;
@@ -301,7 +313,6 @@ def inject_design_system():
         to { opacity: 1; transform: translateY(0); }
     }
 
-    /* ---------- 로그인 히어로 카드 ---------- */
     .login-hero {
         background: var(--card);
         border: 1px solid var(--border);
@@ -314,7 +325,6 @@ def inject_design_system():
     }
     .login-hero > * { position: relative; z-index: 1; }
 
-    /* ---------- 타이머 배지 ---------- */
     #realtime-timer-badge {
         background: linear-gradient(135deg, var(--foreground), #1e293b);
         color: white;
@@ -328,7 +338,6 @@ def inject_design_system():
         letter-spacing: 0.05em;
     }
 
-    /* ---------- 사이드바 브랜드 카드 ---------- */
     .sidebar-brand-card {
         background: linear-gradient(160deg, #F1F5F9, #FFFFFF);
         padding: 22px;
@@ -348,15 +357,6 @@ def inject_design_system():
         color: transparent;
     }
 
-    /* ---------- 저장소 관리 액션바(다운로드/수정/삭제 한 줄 정렬) ---------- */
-    .repo-action-bar {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-bottom: 8px;
-    }
-
-    /* ---------- Streamlit 기본 위젯 커스터마이즈 (가능한 범위 내) ---------- */
     div[data-testid="stButton"] > button {
         border-radius: 10px !important;
         font-weight: 500 !important;
@@ -509,14 +509,12 @@ def show_main_page():
         tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        # 1. 상단 지표 카드 4개
         m1, m2, m3, m4 = st.columns(4)
         with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
         with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
         with m3: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 0 / 완료 0</div></div>", unsafe_allow_html=True)
         with m4: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True)
-        # 2. 중단 2분할 영역
         chart_col1, chart_col2 = st.columns([6, 4])
         with chart_col1:
             with st.container(border=True):
@@ -565,7 +563,6 @@ def show_main_page():
         """, unsafe_allow_html=True)
         st.markdown("##### 최근 활동 프로젝트")
         
-        # 3. 하단 최근 활동 프로젝트 카드 그리드
         if not repo_data:
             st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
         else:
@@ -635,7 +632,6 @@ def show_main_page():
                     current_user = st.session_state.get('user_id')
                     can_manage = (current_user == item['author'] or current_user == 'admin')
 
-                    # ---- 다운로드 / 수정 / 삭제 버튼을 한 줄에 나란히 정렬 ----
                     if can_manage:
                         btn_col1, btn_col2, btn_col3, btn_spacer = st.columns([1.2, 1.2, 1.2, 3.4])
                     else:
@@ -654,8 +650,6 @@ def show_main_page():
                                 st.session_state[edit_toggle_key] = not st.session_state.get(edit_toggle_key, False)
                         with btn_col3:
                             if st.button("산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
-                                # 삭제 대상 id를 deleted_ids에 기록하여, 이후 구글 시트 재동기화 시에도
-                                # 되살아나지 않도록 방지한 뒤 repository 목록에서 제거
                                 st.session_state['app_data'].setdefault('deleted_ids', []).append(str(item['id']))
                                 st.session_state['app_data']['repository'] = [
                                     p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
@@ -664,7 +658,6 @@ def show_main_page():
                                 st.success("삭제되었습니다.")
                                 st.rerun()
 
-                    # ---- 수정 폼: '내용 수정' 버튼을 눌렀을 때만 펼쳐짐 ----
                     if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
                         with st.form(f"edit_form_{item['id']}"):
                             edit_title = st.text_input("프로젝트 명 수정", value=item['title'])
@@ -731,6 +724,21 @@ def show_main_page():
                     save_data(st.session_state['app_data'])
                     st.success(f"분야 [{rem_cat}]가 삭제되었습니다.")
                     st.rerun()
+
+            st.markdown("---")
+            st.markdown("### 🔍 Google Sheets 연동 진단 로그")
+            st.caption(f"현재 db_mode: **{st.session_state.get('db_mode', '알 수 없음')}**")
+            debug_log = st.session_state.get('gsheets_debug_log', [])
+            if debug_log:
+                for line in debug_log:
+                    if line.startswith("❌"):
+                        st.error(line)
+                    elif line.startswith("⚠️"):
+                        st.warning(line)
+                    else:
+                        st.info(line)
+            else:
+                st.write("진단 로그가 없습니다. 앱을 재시작(Reboot)하면 이 페이지에서 연동 상태를 다시 확인할 수 있습니다.")
 
 # ==========================================
 # 5. 사이드바 구성 (로그인 상태일 때만 노출)
