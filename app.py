@@ -21,7 +21,8 @@ def load_data():
     local_data = {
         "users_db": {"admin": "password1234"}, 
         "repository": [],
-        "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"]
+        "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"],
+        "deleted_ids": []   # 삭제된 산출물 id를 기록하여 재동기화 시 되살아나지 않도록 방지
     }
     
     if os.path.exists(DATA_FILE):
@@ -29,6 +30,12 @@ def load_data():
             loaded = pickle.load(f)
             if isinstance(loaded, dict):
                 local_data.update(loaded)
+    if 'deleted_ids' not in local_data:
+        local_data['deleted_ids'] = []
+    # 로컬(pickle)에 저장되어 있던 값을 구글 시트 병합 이전에 미리 보존
+    local_users_before_merge = dict(local_data['users_db'])
+    local_repo_before_merge = list(local_data['repository'])
+    deleted_ids_set = set(str(x) for x in local_data['deleted_ids'])
             
     st.session_state['db_mode'] = "Local File"
     
@@ -42,7 +49,13 @@ def load_data():
                 users_df = conn.read(worksheet="Users", usecols=[0,1], ttl=0)
                 if not users_df.empty:
                     users_df = users_df.dropna(subset=['ID'])
-                    local_data['users_db'] = dict(zip(users_df['ID'].astype(str), users_df['Password'].astype(str)))
+                    sheet_users = dict(zip(users_df['ID'].astype(str), users_df['Password'].astype(str)))
+                    # 구글 시트 결과로 완전히 덮어쓰지 않고, 로컬에만 있던(아직 시트에 반영 안 된) 계정을 합집합으로 보존
+                    merged_users = dict(sheet_users)
+                    for uid, pw in local_users_before_merge.items():
+                        if uid not in merged_users:
+                            merged_users[uid] = pw
+                    local_data['users_db'] = merged_users
             except: pass
                 
             try:
@@ -52,20 +65,33 @@ def load_data():
                     sheet_repo = repo_df.to_dict('records')
                     
                     merged_repo = []
+                    sheet_ids_seen = set()
                     for s_item in sheet_repo:
+                        s_id_str = str(s_item['id'])
+                        # 삭제된 것으로 기록된 id는 구글 시트에 남아있어도 무시(재동기화 방지)
+                        if s_id_str in deleted_ids_set:
+                            continue
                         try:
                             if pd.isna(s_item['feedbacks']): s_item['feedbacks'] = []
                             else: s_item['feedbacks'] = ast.literal_eval(str(s_item['feedbacks']))
                         except:
                             s_item['feedbacks'] = []
                             
-                        matching_local = next((l for l in local_data['repository'] if str(l['id']) == str(s_item['id'])), None)
+                        matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
                         if matching_local and 'file_data' in matching_local:
                             s_item['file_data'] = matching_local['file_data']
                         else:
                             s_item['file_data'] = b''
                         
                         merged_repo.append(s_item)
+                        sheet_ids_seen.add(s_id_str)
+                    
+                    # 로컬에만 있고 아직 구글 시트에 반영되지 않은(신규 업로드 등) 항목도 보존
+                    for l_item in local_repo_before_merge:
+                        l_id_str = str(l_item['id'])
+                        if l_id_str not in sheet_ids_seen and l_id_str not in deleted_ids_set:
+                            merged_repo.append(l_item)
+                    
                     local_data['repository'] = merged_repo
             except: pass
     except Exception as e:
@@ -89,6 +115,11 @@ def save_data(data):
                     repo_df = repo_df.drop(columns=['file_data'])
                 repo_df['feedbacks'] = repo_df['feedbacks'].apply(lambda x: str(x))
                 conn.update(worksheet="Repository", data=repo_df)
+            else:
+                # 저장소가 완전히 비어있는 경우에도 시트를 빈 상태로 덮어써서
+                # 삭제된 항목이 시트에 남아 재동기화되는 것을 방지
+                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks'])
+                conn.update(worksheet="Repository", data=empty_df)
         except Exception as e:
             pass
 if 'app_data' not in st.session_state:
@@ -317,6 +348,14 @@ def inject_design_system():
         color: transparent;
     }
 
+    /* ---------- 저장소 관리 액션바(다운로드/수정/삭제 한 줄 정렬) ---------- */
+    .repo-action-bar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
     /* ---------- Streamlit 기본 위젯 커스터마이즈 (가능한 범위 내) ---------- */
     div[data-testid="stButton"] > button {
         border-radius: 10px !important;
@@ -372,9 +411,6 @@ inject_design_system()
 def show_login_page():
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        # 기존의 st.write("<br><br>", unsafe_allow_html=True) 호출이
-        # 빈 흰색 박스로 렌더링되는 원인이었으므로 완전히 제거하고,
-        # 카드 자체의 margin-top으로 상단 여백을 대체 처리함
         st.markdown("<div class='login-hero'>", unsafe_allow_html=True)
 
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
@@ -473,14 +509,14 @@ def show_main_page():
         tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        # 1. 상단 지표 카드 4개 (Star 지표 삭제, 4등분 배치로 재조정)
+        # 1. 상단 지표 카드 4개
         m1, m2, m3, m4 = st.columns(4)
         with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
         with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
         with m3: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 0 / 완료 0</div></div>", unsafe_allow_html=True)
         with m4: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True)
-        # 2. 중단 2분할 영역 (활동 요약 다크 카드 삭제, 차트 2개만 배치)
+        # 2. 중단 2분할 영역
         chart_col1, chart_col2 = st.columns([6, 4])
         with chart_col1:
             with st.container(border=True):
@@ -592,39 +628,56 @@ def show_main_page():
         else:
             for item in reversed(repo_data):
                 with st.container():
-                    col_info, col_action = st.columns([4, 1])
-                    with col_info:
-                        c_tag = item.get('category', '일반')
-                        st.markdown(f"#### {item['title']} <span style='font-family:var(--font-mono); font-size:11px; background:rgba(0,82,255,0.08); color:var(--accent); padding:3px 10px; border-radius:999px; border:1px solid rgba(0,82,255,0.2);'>{c_tag}</span>", unsafe_allow_html=True)
-                        st.markdown(f"**공유자:** {item['author']} | **등록일:** {item['date']}")
-                        st.write(item['desc'])
-                    with col_action:
-                        if item.get('file_data'):
-                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item['filename'], mime="application/octet-stream", key=f"dl_{item['id']}")
-                        else:
-                            st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}")
-                    
+                    st.markdown(f"#### {item['title']} <span style='font-family:var(--font-mono); font-size:11px; background:rgba(0,82,255,0.08); color:var(--accent); padding:3px 10px; border-radius:999px; border:1px solid rgba(0,82,255,0.2);'>{item.get('category', '일반')}</span>", unsafe_allow_html=True)
+                    st.markdown(f"**공유자:** {item['author']} | **등록일:** {item['date']}")
+                    st.write(item['desc'])
+
                     current_user = st.session_state.get('user_id')
-                    if current_user == item['author'] or current_user == 'admin':
-                        with st.expander("산출물 관리 (수정/삭제)"):
-                            with st.form(f"edit_form_{item['id']}"):
-                                edit_title = st.text_input("프로젝트 명 수정", value=item['title'])
-                                edit_desc = st.text_area("설명 수정", value=item['desc'])
-                                c_col1, c_col2 = st.columns(2)
-                                update_btn = c_col1.form_submit_button("내용 수정")
-                                delete_btn = c_col2.form_submit_button("산출물 삭제")
-                                
-                                if update_btn:
-                                    item['title'] = edit_title
-                                    item['desc'] = edit_desc
-                                    save_data(st.session_state['app_data'])
-                                    st.success("수정되었습니다.")
-                                    st.rerun()
-                                if delete_btn:
-                                    st.session_state['app_data']['repository'] = [p for p in repo_data if p['id'] != item['id']]
-                                    save_data(st.session_state['app_data'])
-                                    st.success("삭제되었습니다.")
-                                    st.rerun()
+                    can_manage = (current_user == item['author'] or current_user == 'admin')
+
+                    # ---- 다운로드 / 수정 / 삭제 버튼을 한 줄에 나란히 정렬 ----
+                    if can_manage:
+                        btn_col1, btn_col2, btn_col3, btn_spacer = st.columns([1.2, 1.2, 1.2, 3.4])
+                    else:
+                        btn_col1, btn_spacer = st.columns([1.2, 4.8])
+
+                    with btn_col1:
+                        if item.get('file_data'):
+                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item['filename'], mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                        else:
+                            st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
+
+                    if can_manage:
+                        with btn_col2:
+                            edit_toggle_key = f"edit_toggle_{item['id']}"
+                            if st.button("내용 수정", key=f"edit_open_{item['id']}", use_container_width=True):
+                                st.session_state[edit_toggle_key] = not st.session_state.get(edit_toggle_key, False)
+                        with btn_col3:
+                            if st.button("산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
+                                # 삭제 대상 id를 deleted_ids에 기록하여, 이후 구글 시트 재동기화 시에도
+                                # 되살아나지 않도록 방지한 뒤 repository 목록에서 제거
+                                st.session_state['app_data'].setdefault('deleted_ids', []).append(str(item['id']))
+                                st.session_state['app_data']['repository'] = [
+                                    p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
+                                ]
+                                save_data(st.session_state['app_data'])
+                                st.success("삭제되었습니다.")
+                                st.rerun()
+
+                    # ---- 수정 폼: '내용 수정' 버튼을 눌렀을 때만 펼쳐짐 ----
+                    if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
+                        with st.form(f"edit_form_{item['id']}"):
+                            edit_title = st.text_input("프로젝트 명 수정", value=item['title'])
+                            edit_desc = st.text_area("설명 수정", value=item['desc'])
+                            save_edit_btn = st.form_submit_button("수정 내용 저장")
+                            if save_edit_btn:
+                                item['title'] = edit_title
+                                item['desc'] = edit_desc
+                                save_data(st.session_state['app_data'])
+                                st.session_state[f"edit_toggle_{item['id']}"] = False
+                                st.success("수정되었습니다.")
+                                st.rerun()
+
                     if item.get('file_data'):
                         file_ext = item['filename'].split('.')[-1].lower()
                         if file_ext in ['py', 'txt', 'csv']:
