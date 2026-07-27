@@ -238,8 +238,6 @@ def inject_design_system():
     }
 
     /* ---------- 패널 카드: st.container(border=True) 오버라이드 ---------- */
-    /* Streamlit이 생성하는 실제 컨테이너 자체에 카드 스타일을 입혀서
-       "여는 div + 닫는 div" 방식의 빈 껍데기 문제를 원천 차단 */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 16px !important;
         box-shadow: var(--shadow-md);
@@ -272,40 +270,6 @@ def inject_design_system():
         to { opacity: 1; transform: translateY(0); }
     }
 
-    /* ---------- 인버전(다크) 섹션 ---------- */
-    .invert-section {
-        background-color: var(--foreground);
-        color: #F8FAFC;
-        border-radius: 20px;
-        padding: 26px;
-        position: relative;
-        overflow: hidden;
-        box-shadow: var(--shadow-xl);
-        background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
-        background-size: 22px 22px;
-    }
-    .invert-section::before {
-        content: "";
-        position: absolute;
-        top: -60px; right: -60px;
-        width: 200px; height: 200px;
-        background: var(--accent);
-        opacity: 0.18;
-        filter: blur(80px);
-        border-radius: 50%;
-        pointer-events: none;
-    }
-    .invert-section h4, .invert-section h5, .invert-section h6, .invert-section p, .invert-section div {
-        color: #F8FAFC !important;
-    }
-    .invert-accent-value {
-        background: linear-gradient(to right, #7fa4ff, #c7d7ff);
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent !important;
-        font-weight: 700;
-    }
-
     /* ---------- 로그인 히어로 카드 ---------- */
     .login-hero {
         background: var(--card);
@@ -315,6 +279,7 @@ def inject_design_system():
         box-shadow: var(--shadow-xl);
         position: relative;
         animation: fadeInUp 0.7s ease-out;
+        margin-top: 24px;
     }
     .login-hero > * { position: relative; z-index: 1; }
 
@@ -407,7 +372,9 @@ inject_design_system()
 def show_login_page():
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        st.write("<br><br>", unsafe_allow_html=True)
+        # 기존의 st.write("<br><br>", unsafe_allow_html=True) 호출이
+        # 빈 흰색 박스로 렌더링되는 원인이었으므로 완전히 제거하고,
+        # 카드 자체의 margin-top으로 상단 여백을 대체 처리함
         st.markdown("<div class='login-hero'>", unsafe_allow_html=True)
 
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
@@ -506,16 +473,15 @@ def show_main_page():
         tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        # 1. 상단 지표 카드 5개
-        m1, m2, m3, m4, m5 = st.columns(5)
+        # 1. 상단 지표 카드 4개 (Star 지표 삭제, 4등분 배치로 재조정)
+        m1, m2, m3, m4 = st.columns(4)
         with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
         with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
         with m3: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 0 / 완료 0</div></div>", unsafe_allow_html=True)
-        with m4: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>Star</div><div style='font-size: 28px; font-weight: 800;' class='gradient-text'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>좋아요(로그인 사용자)</div></div>", unsafe_allow_html=True)
-        with m5: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
+        with m4: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True)
-        # 2. 중단 3분할 영역 (st.container(border=True)로 안전하게 카드 구성 - 빈 div 문제 원천 차단)
-        chart_col1, chart_col2, chart_col3 = st.columns([5, 3, 2])
+        # 2. 중단 2분할 영역 (활동 요약 다크 카드 삭제, 차트 2개만 배치)
+        chart_col1, chart_col2 = st.columns([6, 4])
         with chart_col1:
             with st.container(border=True):
                 st.markdown("##### 프로젝트 활동 현황")
@@ -528,7 +494,7 @@ def show_main_page():
                     fig = px.bar(trend_df, x="일자", y="커밋 수", title="", labels={'일자': '', '커밋 수': ''})
                     fig.update_traces(marker_color='#0052FF', marker_line_width=0)
                     fig.update_layout(
-                        height=240, margin=dict(l=20, r=20, t=10, b=20),
+                        height=260, margin=dict(l=20, r=20, t=10, b=20),
                         font=dict(family="Pretendard, sans-serif", color="#0F172A"),
                         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
                     )
@@ -547,28 +513,13 @@ def show_main_page():
                         color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
                     )
                     fig_pie.update_layout(
-                        height=240, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
+                        height=260, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
                         font=dict(family="Pretendard, sans-serif", color="#0F172A"),
                         paper_bgcolor='rgba(0,0,0,0)'
                     )
                     st.plotly_chart(fig_pie, use_container_width=True)
                 else:
                     st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
-        with chart_col3:
-            st.markdown(f"""
-                <div class='invert-section'>
-                    <div style='position:relative; z-index:1;'>
-                        <h5 style='margin-top:0;'>활동 요약 <span style='font-size:11px; color:#94a3b8; font-weight:400;'>(최근 7일)</span></h5>
-                        <hr style='border-color:rgba(255,255,255,0.15) !important; margin:10px 0;'>
-                        <p style='font-size:13px; margin:6px 0;'>커밋 수: <span class='invert-accent-value'>{total_projects * 2}건</span></p>
-                        <p style='font-size:13px; margin:6px 0;'>이슈 생성: <span class='invert-accent-value'>0건</span></p>
-                        <p style='font-size:13px; margin:6px 0;'>업데이트된 프로젝트: <span class='invert-accent-value'>{total_projects}건</span></p>
-                        <hr style='border-color:rgba(255,255,255,0.15) !important; margin:10px 0;'>
-                        <h6 style='margin-bottom:4px;'>언어 사용 통계</h6>
-                        <p style='font-size:12px; color:#cbd5e1;'>Python / HTML 중심 운영</p>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True)
         st.markdown("""
             <div class='section-badge'>
