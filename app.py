@@ -222,7 +222,7 @@ def inject_design_system():
         50% { transform: scale(1.3); opacity: 0.7; }
     }
 
-    /* ---------- 카드 (metric / panel) ---------- */
+    /* ---------- 지표 카드 (metric) ---------- */
     .metric-card {
         background-color: var(--card);
         padding: 20px;
@@ -236,17 +236,18 @@ def inject_design_system():
         box-shadow: var(--shadow-lg);
         transform: translateY(-3px);
     }
-    .panel-card {
-        background-color: var(--card);
-        padding: 24px;
-        border-radius: 16px;
-        border: 1px solid var(--border);
-        margin-bottom: 15px;
-        height: 100%;
+
+    /* ---------- 패널 카드: st.container(border=True) 오버라이드 ---------- */
+    /* Streamlit이 생성하는 실제 컨테이너 자체에 카드 스타일을 입혀서
+       "여는 div + 닫는 div" 방식의 빈 껍데기 문제를 원천 차단 */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 16px !important;
         box-shadow: var(--shadow-md);
         transition: box-shadow 0.3s ease-out;
     }
-    .panel-card:hover { box-shadow: var(--shadow-lg); }
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        box-shadow: var(--shadow-lg);
+    }
 
     /* ---------- 프로젝트 카드 ---------- */
     .project-card {
@@ -313,27 +314,7 @@ def inject_design_system():
         padding: 44px 36px 36px 36px;
         box-shadow: var(--shadow-xl);
         position: relative;
-        overflow: hidden;
         animation: fadeInUp 0.7s ease-out;
-    }
-    /* 은은한 배경 글로우만 유지 (불필요한 사각형 요소 제거) */
-    .login-hero .bg-glow {
-        position: absolute;
-        bottom: -90px; left: -90px;
-        width: 220px; height: 220px;
-        background: radial-gradient(circle, rgba(0,82,255,0.10), transparent 70%);
-        border-radius: 50%;
-        pointer-events: none;
-        z-index: 0;
-    }
-    .login-hero .bg-glow-top {
-        position: absolute;
-        top: -70px; right: -70px;
-        width: 180px; height: 180px;
-        background: radial-gradient(circle, rgba(77,124,255,0.10), transparent 70%);
-        border-radius: 50%;
-        pointer-events: none;
-        z-index: 0;
     }
     .login-hero > * { position: relative; z-index: 1; }
 
@@ -427,11 +408,7 @@ def show_login_page():
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         st.write("<br><br>", unsafe_allow_html=True)
-        st.markdown("""
-            <div class='login-hero'>
-                <div class='bg-glow'></div>
-                <div class='bg-glow-top'></div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div class='login-hero'>", unsafe_allow_html=True)
 
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
         with col_logo2: st.image(LOGO_IMAGE, use_container_width=True)
@@ -529,7 +506,7 @@ def show_main_page():
         tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        # 1. 상단 지표 카드 5개 (빈 네모칸 제거됨)
+        # 1. 상단 지표 카드 5개
         m1, m2, m3, m4, m5 = st.columns(5)
         with m1: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
         with m2: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
@@ -537,48 +514,46 @@ def show_main_page():
         with m4: st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>Star</div><div style='font-size: 28px; font-weight: 800;' class='gradient-text'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>좋아요(로그인 사용자)</div></div>", unsafe_allow_html=True)
         with m5: st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True)
-        # 2. 중단 3분할 영역 (실제 데이터 반영)
+        # 2. 중단 3분할 영역 (st.container(border=True)로 안전하게 카드 구성 - 빈 div 문제 원천 차단)
         chart_col1, chart_col2, chart_col3 = st.columns([5, 3, 2])
         with chart_col1:
-            st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
-            st.markdown("##### 프로젝트 활동 현황")
-            if repo_data:
-                dates = pd.date_range(end=datetime.today(), periods=7).strftime("%m-%d").tolist()
-                trend_df = pd.DataFrame({
-                    "일자": dates,
-                    "커밋 수": [0, 0, 0, 0, 0, 0, total_projects * 2]
-                })
-                fig = px.bar(trend_df, x="일자", y="커밋 수", title="", labels={'일자': '', '커밋 수': ''})
-                fig.update_traces(marker_color='#0052FF', marker_line_width=0)
-                fig.update_layout(
-                    height=240, margin=dict(l=20, r=20, t=10, b=20),
-                    font=dict(family="Pretendard, sans-serif", color="#0F172A"),
-                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("시각화할 프로젝트 데이터가 부족합니다.")
-            st.markdown("</div>", unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown("##### 프로젝트 활동 현황")
+                if repo_data:
+                    dates = pd.date_range(end=datetime.today(), periods=7).strftime("%m-%d").tolist()
+                    trend_df = pd.DataFrame({
+                        "일자": dates,
+                        "커밋 수": [0, 0, 0, 0, 0, 0, total_projects * 2]
+                    })
+                    fig = px.bar(trend_df, x="일자", y="커밋 수", title="", labels={'일자': '', '커밋 수': ''})
+                    fig.update_traces(marker_color='#0052FF', marker_line_width=0)
+                    fig.update_layout(
+                        height=240, margin=dict(l=20, r=20, t=10, b=20),
+                        font=dict(family="Pretendard, sans-serif", color="#0F172A"),
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("시각화할 프로젝트 데이터가 부족합니다.")
         with chart_col2:
-            st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
-            st.markdown("##### 분야별 프로젝트 분포")
-            if repo_data:
-                df_repo = pd.DataFrame(repo_data)
-                cat_counts = df_repo.get('category', pd.Series(['미분류']*len(df_repo))).value_counts().reset_index()
-                cat_counts.columns = ['분야', '건수']
-                fig_pie = px.pie(
-                    cat_counts, values='건수', names='분야', hole=0.65,
-                    color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
-                )
-                fig_pie.update_layout(
-                    height=240, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
-                    font=dict(family="Pretendard, sans-serif", color="#0F172A"),
-                    paper_bgcolor='rgba(0,0,0,0)'
-                )
-                st.plotly_chart(fig_pie, use_container_width=True)
-            else:
-                st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
-            st.markdown("</div>", unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown("##### 분야별 프로젝트 분포")
+                if repo_data:
+                    df_repo = pd.DataFrame(repo_data)
+                    cat_counts = df_repo.get('category', pd.Series(['미분류']*len(df_repo))).value_counts().reset_index()
+                    cat_counts.columns = ['분야', '건수']
+                    fig_pie = px.pie(
+                        cat_counts, values='건수', names='분야', hole=0.65,
+                        color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
+                    )
+                    fig_pie.update_layout(
+                        height=240, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
+                        font=dict(family="Pretendard, sans-serif", color="#0F172A"),
+                        paper_bgcolor='rgba(0,0,0,0)'
+                    )
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                else:
+                    st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
         with chart_col3:
             st.markdown(f"""
                 <div class='invert-section'>
