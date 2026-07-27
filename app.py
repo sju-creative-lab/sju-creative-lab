@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pickle
 import os
 import ast
+import traceback
 import streamlit.components.v1 as components
 # ==========================================
 # 0. 공통 설정
@@ -37,86 +38,104 @@ def load_data():
     deleted_ids_set = set(str(x) for x in local_data['deleted_ids'])
             
     st.session_state['db_mode'] = "Local File"
-    # 진단용 로그를 세션에 축적 (관리자 화면에서만 노출)
     st.session_state['gsheets_debug_log'] = []
     
-    def _log(msg):
-        st.session_state['gsheets_debug_log'].append(msg)
+    def _log(msg, level="info"):
+        st.session_state['gsheets_debug_log'].append((level, msg))
+    
+    def _fmt_err(e):
+        # 예외 타입 + 메시지 + 마지막 traceback 라인까지 강제로 문자열화하여
+        # "빈 에러 메시지" 현상을 방지
+        tb_last = traceback.format_exc().strip().splitlines()
+        tb_line = tb_last[-1] if tb_last else ""
+        return f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'} | {tb_line}"
     
     try:
         from streamlit_gsheets import GSheetsConnection
         _log("streamlit_gsheets 패키지 import 성공")
         if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
             _log("st.secrets에 [connections.gsheets] 설정 발견 → Google Sheets 모드로 전환 시도")
-            st.session_state['db_mode'] = "Google Sheets"
-            conn = st.connection("gsheets", type=GSheetsConnection)
+            # secrets에 어떤 키들이 들어있는지(값은 노출하지 않고 키 이름만) 점검
+            gsheets_keys = list(st.secrets["connections"]["gsheets"].keys())
+            _log(f"secrets.connections.gsheets 에 등록된 키 목록: {gsheets_keys}")
+            if "spreadsheet" not in gsheets_keys:
+                _log("⚠️ 'spreadsheet' 키가 secrets에 없습니다. 시트 URL 또는 ID를 spreadsheet 항목으로 추가해야 합니다.", "warn")
             
+            st.session_state['db_mode'] = "Google Sheets"
             try:
-                users_df = conn.read(worksheet="Users", usecols=[0,1], ttl=0)
-                _log(f"Users 시트 읽기 성공: {len(users_df)}행, 컬럼={list(users_df.columns)}")
-                if not users_df.empty:
-                    if 'ID' not in users_df.columns or 'Password' not in users_df.columns:
-                        _log(f"⚠️ Users 시트에 'ID'/'Password' 헤더가 없습니다. 실제 컬럼명: {list(users_df.columns)} → 1행에 헤더를 입력해주세요.")
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                _log("st.connection 객체 생성 성공")
+            except Exception as e_conn:
+                _log(f"❌ st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn)}", "error")
+                conn = None
+            
+            if conn is not None:
+                try:
+                    users_df = conn.read(worksheet="Users", usecols=[0,1], ttl=0)
+                    _log(f"Users 시트 읽기 성공: {len(users_df)}행, 컬럼={list(users_df.columns)}")
+                    if not users_df.empty:
+                        if 'ID' not in users_df.columns or 'Password' not in users_df.columns:
+                            _log(f"⚠️ Users 시트에 'ID'/'Password' 헤더가 없습니다. 실제 컬럼명: {list(users_df.columns)}", "warn")
+                        else:
+                            users_df = users_df.dropna(subset=['ID'])
+                            sheet_users = dict(zip(users_df['ID'].astype(str), users_df['Password'].astype(str)))
+                            merged_users = dict(sheet_users)
+                            for uid, pw in local_users_before_merge.items():
+                                if uid not in merged_users:
+                                    merged_users[uid] = pw
+                            local_data['users_db'] = merged_users
+                            _log(f"Users 병합 완료: 시트 {len(sheet_users)}건 + 로컬 전용 {len(merged_users)-len(sheet_users)}건")
                     else:
-                        users_df = users_df.dropna(subset=['ID'])
-                        sheet_users = dict(zip(users_df['ID'].astype(str), users_df['Password'].astype(str)))
-                        merged_users = dict(sheet_users)
-                        for uid, pw in local_users_before_merge.items():
-                            if uid not in merged_users:
-                                merged_users[uid] = pw
-                        local_data['users_db'] = merged_users
-                        _log(f"Users 병합 완료: 시트 {len(sheet_users)}건 + 로컬 전용 {len(merged_users)-len(sheet_users)}건")
-                else:
-                    _log("⚠️ Users 시트가 비어 있습니다(헤더 행도 없음). A1='ID', B1='Password'를 입력해주세요.")
-            except Exception as e_users:
-                _log(f"❌ Users 시트 읽기 실패: {e_users}")
-                
-            try:
-                repo_df = conn.read(worksheet="Repository", ttl=0)
-                _log(f"Repository 시트 읽기 성공: {len(repo_df)}행, 컬럼={list(repo_df.columns)}")
-                if not repo_df.empty:
-                    if 'id' not in repo_df.columns:
-                        _log(f"⚠️ Repository 시트에 'id' 헤더가 없습니다. 실제 컬럼명: {list(repo_df.columns)}")
-                    else:
-                        repo_df = repo_df.dropna(subset=['id'])
-                        sheet_repo = repo_df.to_dict('records')
-                        
-                        merged_repo = []
-                        sheet_ids_seen = set()
-                        for s_item in sheet_repo:
-                            s_id_str = str(s_item['id'])
-                            if s_id_str in deleted_ids_set:
-                                continue
-                            try:
-                                if pd.isna(s_item.get('feedbacks')): s_item['feedbacks'] = []
-                                else: s_item['feedbacks'] = ast.literal_eval(str(s_item['feedbacks']))
-                            except:
-                                s_item['feedbacks'] = []
-                                
-                            matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
-                            if matching_local and 'file_data' in matching_local:
-                                s_item['file_data'] = matching_local['file_data']
-                            else:
-                                s_item['file_data'] = b''
+                        _log("ℹ️ Users 시트가 비어 있습니다(헤더만 있고 데이터 행 없음). admin 계정만 로컬 기본값으로 사용됩니다.")
+                except Exception as e_users:
+                    _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users)}", "error")
+                    
+                try:
+                    repo_df = conn.read(worksheet="Repository", ttl=0)
+                    _log(f"Repository 시트 읽기 성공: {len(repo_df)}행, 컬럼={list(repo_df.columns)}")
+                    if not repo_df.empty:
+                        if 'id' not in repo_df.columns:
+                            _log(f"⚠️ Repository 시트에 'id' 헤더가 없습니다. 실제 컬럼명: {list(repo_df.columns)}", "warn")
+                        else:
+                            repo_df = repo_df.dropna(subset=['id'])
+                            sheet_repo = repo_df.to_dict('records')
                             
-                            merged_repo.append(s_item)
-                            sheet_ids_seen.add(s_id_str)
-                        
-                        for l_item in local_repo_before_merge:
-                            l_id_str = str(l_item['id'])
-                            if l_id_str not in sheet_ids_seen and l_id_str not in deleted_ids_set:
-                                merged_repo.append(l_item)
-                        
-                        local_data['repository'] = merged_repo
-                        _log(f"Repository 병합 완료: 총 {len(merged_repo)}건")
-                else:
-                    _log("ℹ️ Repository 시트가 비어 있습니다(헤더 없음). 정상 상황일 수 있습니다(아직 데이터 없음).")
-            except Exception as e_repo:
-                _log(f"❌ Repository 시트 읽기 실패: {e_repo}")
+                            merged_repo = []
+                            sheet_ids_seen = set()
+                            for s_item in sheet_repo:
+                                s_id_str = str(s_item['id'])
+                                if s_id_str in deleted_ids_set:
+                                    continue
+                                try:
+                                    if pd.isna(s_item.get('feedbacks')): s_item['feedbacks'] = []
+                                    else: s_item['feedbacks'] = ast.literal_eval(str(s_item['feedbacks']))
+                                except:
+                                    s_item['feedbacks'] = []
+                                    
+                                matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
+                                if matching_local and 'file_data' in matching_local:
+                                    s_item['file_data'] = matching_local['file_data']
+                                else:
+                                    s_item['file_data'] = b''
+                                
+                                merged_repo.append(s_item)
+                                sheet_ids_seen.add(s_id_str)
+                            
+                            for l_item in local_repo_before_merge:
+                                l_id_str = str(l_item['id'])
+                                if l_id_str not in sheet_ids_seen and l_id_str not in deleted_ids_set:
+                                    merged_repo.append(l_item)
+                            
+                            local_data['repository'] = merged_repo
+                            _log(f"Repository 병합 완료: 총 {len(merged_repo)}건")
+                    else:
+                        _log("ℹ️ Repository 시트가 비어 있습니다(헤더만 있고 데이터 행 없음). 정상 상황일 수 있습니다.")
+                except Exception as e_repo:
+                    _log(f"❌ Repository 시트 읽기 실패: {_fmt_err(e_repo)}", "error")
         else:
             _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
     except Exception as e:
-        _log(f"❌ Google Sheets 연동 초기화 자체가 실패했습니다: {e}")
+        _log(f"❌ Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e)}", "error")
     return local_data
 def save_data(data):
     with open(DATA_FILE, "wb") as f:
@@ -140,7 +159,8 @@ def save_data(data):
                 empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks'])
                 conn.update(worksheet="Repository", data=empty_df)
         except Exception as e:
-            st.session_state.setdefault('gsheets_debug_log', []).append(f"❌ save_data 중 Google Sheets 쓰기 실패: {e}")
+            err_txt = f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'}"
+            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 if 'logged_in' not in st.session_state:
@@ -174,7 +194,7 @@ def inject_timer_js():
     """, height=0)
 
 # ==========================================
-# 2-1. 디자인 토큰 & 전역 스타일 (Minimalist Modern 디자인 시스템 - 한글 최적화)
+# 2-1. 디자인 토큰 & 전역 스타일
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -730,10 +750,10 @@ def show_main_page():
             st.caption(f"현재 db_mode: **{st.session_state.get('db_mode', '알 수 없음')}**")
             debug_log = st.session_state.get('gsheets_debug_log', [])
             if debug_log:
-                for line in debug_log:
-                    if line.startswith("❌"):
+                for level, line in debug_log:
+                    if level == "error":
                         st.error(line)
-                    elif line.startswith("⚠️"):
+                    elif level == "warn":
                         st.warning(line)
                     else:
                         st.info(line)
