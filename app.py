@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 # ==========================================
 # 0. 공통 설정
 # ==========================================
-LOGO_IMAGE = "logo-main03_1.png"
+LOGO_IMAGE = "sj_signature04.png"
 DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
@@ -699,23 +699,25 @@ def show_main_page():
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("시각화할 프로젝트 데이터가 부족합니다.")
-        with chart_col2:
-            with st.container(border=True):
-                st.markdown("##### 분야별 프로젝트 분포")
-                if repo__repo))).value_counts().reset_index()
-                    cat_counts.columns = ['분야', '건수']
-                    fig_pie = px.pie(
-                        cat_counts, values='건수', names='분야', hole=0.65,
-                        color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
-                    )
-                    fig_pie.update_layout(
-                        height=260, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
-                        font=dict(family="Pretendard, sans-serif", color="#0F172A"),
-                        paper_bgcolor='rgba(0,0,0,0)'
-                    )
-                    st.plotly_chart(fig_pie, use_container_width=True)
-                else:
-                    st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
+                with chart_col2:
+                    with st.container(border=True):
+                        st.markdown("##### 분야별 프로젝트 분포")
+                        if repo_data:
+                            df_repo = pd.DataFrame(repo_data)
+                            cat_counts = df_repo.get('category', pd.Series(['미분류'] * len(df_repo))).value_counts().reset_index()
+                            cat_counts.columns = ['분야', '건수']
+                            fig_pie = px.pie(
+                                cat_counts, values='건수', names='분야', hole=0.65,
+                                color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
+                            )
+                            fig_pie.update_layout(
+                                height=260, margin=dict(l=10, r=10, t=10, b=10), showlegend=True,
+                                font=dict(family="Pretendard, sans-serif", color="#0F172A"),
+                                paper_bgcolor='rgba(0,0,0,0)'
+                            )
+                            st.plotly_chart(fig_pie, use_container_width=True)
+                        else:
+                            st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
         st.markdown("""
