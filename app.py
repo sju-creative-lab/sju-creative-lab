@@ -52,7 +52,6 @@ def load_data():
     migrated_users = {}
     for uid, uval in local_data.get('users_db', {}).items():
         if isinstance(uval, str):
-            # 구버전 데이터: 비밀번호 문자열만 있던 계정 → 부서/담당자 정보 없음, 승인 대기 상태로 전환
             is_admin_account = (uid == "admin")
             migrated_users[uid] = {
                 "password": uval,
@@ -421,8 +420,7 @@ def inject_design_system():
         to { opacity: 1; transform: translateY(0); }
     }
 
-    /* 로그인 화면 히어로 영역: 로고 위에 불필요한 빈 사각형이 생기지 않도록
-       배경/그림자만 담당하고, 내부 여백을 명확히 재정의 */
+    /* 로그인 화면 히어로 영역 */
     .login-hero {
         background: var(--card);
         border: 1px solid var(--border);
@@ -432,17 +430,26 @@ def inject_design_system():
         position: relative;
         animation: fadeInUp 0.7s ease-out;
         margin-top: 24px;
-        overflow: hidden;
-    }
-    .login-hero::before,
-    .login-hero::after {
-        content: none !important;
-        display: none !important;
     }
     .login-hero > * { position: relative; z-index: 1; }
-    .login-hero img {
-        margin-top: 0 !important;
-        padding-top: 0 !important;
+
+    /* Streamlit 이미지 컨테이너 자체의 불필요한 배경/여백 제거 (로고 상단 흰 박스 대응) */
+    div[data-testid="stImage"] {
+        background: transparent !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    div[data-testid="stImage"] img {
+        display: block;
+        margin: 0 auto;
+        background: transparent !important;
+    }
+    div[data-testid="element-container"]:has(div[data-testid="stImage"]) {
+        background: transparent !important;
+        box-shadow: none !important;
+        margin-bottom: 0 !important;
     }
 
     #realtime-timer-badge {
@@ -535,9 +542,10 @@ def show_login_page():
     with col2:
         st.markdown("<div class='login-hero'>", unsafe_allow_html=True)
 
-        col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
-        with col_logo2:
-            st.image(LOGO_IMAGE, use_container_width=True)
+        # 로고: 컬럼 중첩 없이 단순 표시 (흰 박스 원인이 될 수 있는 컨테이너 중첩 최소화)
+        _, logo_col, _ = st.columns([1, 1.2, 1])
+        with logo_col:
+            st.image(LOGO_IMAGE, width=200)
 
         st.markdown("""
             <div style='text-align:center; margin-top:10px;'>
@@ -558,10 +566,13 @@ def show_login_page():
         tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
 
         with tab_login:
-            user_id = st.text_input("ID 또는 이메일", key="login_id")
-            password = st.text_input("패스워드", type="password", key="login_pw")
-            st.write("<br>", unsafe_allow_html=True)
-            if st.button("로그인", use_container_width=True):
+            with st.form("login_form"):
+                user_id = st.text_input("ID 또는 이메일", key="login_id")
+                password = st.text_input("패스워드", type="password", key="login_pw")
+                st.write("<br>", unsafe_allow_html=True)
+                login_submit = st.form_submit_button("로그인", use_container_width=True)
+
+            if login_submit:
                 users_db = st.session_state['app_data']['users_db']
                 user_info = users_db.get(user_id)
                 if user_info is None or user_info.get("password") != password:
@@ -576,12 +587,15 @@ def show_login_page():
                     st.rerun()
 
         with tab_signup:
-            new_dept = st.text_input("부서명", key="signup_dept")
-            new_manager = st.text_input("담당자명", key="signup_manager")
-            new_id = st.text_input("새 ID", key="signup_id")
-            new_pw = st.text_input("새 패스워드", type="password", key="signup_pw")
-            new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk")
-            if st.button("계정 생성하기", use_container_width=True):
+            with st.form("signup_form"):
+                new_dept = st.text_input("부서명", key="signup_dept")
+                new_manager = st.text_input("담당자명", key="signup_manager")
+                new_id = st.text_input("새 ID", key="signup_id")
+                new_pw = st.text_input("새 패스워드", type="password", key="signup_pw")
+                new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk")
+                signup_submit = st.form_submit_button("계정 생성하기", use_container_width=True)
+
+            if signup_submit:
                 users_db = st.session_state['app_data']['users_db']
                 if not new_dept.strip() or not new_manager.strip() or not new_id.strip() or not new_pw.strip():
                     st.error("부서명, 담당자명, 아이디, 비밀번호는 모두 필수 입력 항목입니다.")
@@ -688,9 +702,7 @@ def show_main_page():
         with chart_col2:
             with st.container(border=True):
                 st.markdown("##### 분야별 프로젝트 분포")
-                if repo_data:
-                    df_repo = pd.DataFrame(repo_data)
-                    cat_counts = df_repo.get('category', pd.Series(['미분류'] * len(df_repo))).value_counts().reset_index()
+                if repo__repo))).value_counts().reset_index()
                     cat_counts.columns = ['분야', '건수']
                     fig_pie = px.pie(
                         cat_counts, values='건수', names='분야', hole=0.65,
