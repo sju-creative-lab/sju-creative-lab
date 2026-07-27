@@ -42,6 +42,7 @@ def load_data():
             loaded = pickle.load(f)
             if isinstance(loaded, dict):
                 local_data.update(loaded)
+
     if 'deleted_ids' not in local_data:
         local_data['deleted_ids'] = []
 
@@ -63,6 +64,11 @@ def load_data():
     if "admin" not in migrated_users:
         migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
     local_data['users_db'] = migrated_users
+
+    # ---- 산출물 항목에 issues 필드가 없는 구버전 데이터 자동 마이그레이션 ----
+    for item in local_data.get('repository', []):
+        if 'issues' not in item or item['issues'] is None:
+            item['issues'] = []
 
     local_users_before_merge = dict(local_data['users_db'])
     local_repo_before_merge = list(local_data['repository'])
@@ -145,6 +151,14 @@ def load_data():
                             except Exception:
                                 s_item['feedbacks'] = []
 
+                            try:
+                                if pd.isna(s_item.get('issues')):
+                                    s_item['issues'] = []
+                                else:
+                                    s_item['issues'] = ast.literal_eval(str(s_item['issues']))
+                            except Exception:
+                                s_item['issues'] = []
+
                             matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
                             if matching_local and 'file_data' in matching_local:
                                 s_item['file_data'] = matching_local['file_data']
@@ -215,9 +229,11 @@ def save_data(data):
                 if 'file_data' in repo_df.columns:
                     repo_df = repo_df.drop(columns=['file_data'])
                 repo_df['feedbacks'] = repo_df['feedbacks'].apply(lambda x: str(x))
+                if 'issues' in repo_df.columns:
+                    repo_df['issues'] = repo_df['issues'].apply(lambda x: str(x))
                 conn.update(worksheet="Repository", data=repo_df)
             else:
-                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks'])
+                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks', 'issues'])
                 conn.update(worksheet="Repository", data=empty_df)
 
             cat_list = data.get('categories', [])
@@ -246,6 +262,14 @@ if not st.session_state['logged_in'] and "user_session" in st.query_params:
     st.session_state['logged_in'] = True
     st.session_state['user_id'] = st.query_params["user_session"]
     st.session_state['last_activity'] = now_kst()
+
+# ---- 사이드바 필터 상태 기본값 초기화 ----
+if 'filter_category' not in st.session_state:
+    st.session_state['filter_category'] = "전체"
+if 'filter_sort' not in st.session_state:
+    st.session_state['filter_sort'] = "최근 활동순"
+if 'filter_keyword' not in st.session_state:
+    st.session_state['filter_keyword'] = ""
 
 
 # ==========================================
@@ -391,7 +415,6 @@ def inject_design_system():
         box-shadow: var(--shadow-lg);
     }
 
-    /* 로그인 화면 카드: st.container(border=True)가 만드는 실제 wrapper에 스타일 적용 */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(.login-hero-inner) {
         border-radius: 24px !important;
         box-shadow: var(--shadow-xl) !important;
@@ -466,6 +489,17 @@ def inject_design_system():
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
+    }
+
+    .issue-badge-open {
+        display: inline-block; font-size: 11px; font-family: var(--font-mono);
+        background: rgba(234,88,12,0.1); color: #C2410C; border: 1px solid rgba(234,88,12,0.3);
+        padding: 2px 10px; border-radius: 999px;
+    }
+    .issue-badge-done {
+        display: inline-block; font-size: 11px; font-family: var(--font-mono);
+        background: rgba(22,163,74,0.1); color: #15803D; border: 1px solid rgba(22,163,74,0.3);
+        padding: 2px 10px; border-radius: 999px;
     }
 
     div[data-testid="stButton"] > button {
@@ -602,7 +636,35 @@ def show_login_page():
 
 
 # ==========================================
-# 4. 메인 대시보드 화면
+# 4. 사이드바 필터가 반영된 저장소 데이터 조회 함수
+# ==========================================
+def get_filtered_repo():
+    repo_data = st.session_state['app_data']['repository']
+    cat_filter = st.session_state.get('filter_category', '전체')
+    keyword = st.session_state.get('filter_keyword', '').strip().lower()
+    sort_option = st.session_state.get('filter_sort', '최근 활동순')
+
+    filtered = list(repo_data)
+
+    if cat_filter and cat_filter != "전체":
+        filtered = [p for p in filtered if p.get('category', '') == cat_filter]
+
+    if keyword:
+        filtered = [
+            p for p in filtered
+            if keyword in p.get('title', '').lower() or keyword in p.get('desc', '').lower()
+        ]
+
+    if sort_option == "최근 활동순":
+        filtered = sorted(filtered, key=lambda p: p.get('date', ''), reverse=True)
+    elif sort_option == "이슈 많은순":
+        filtered = sorted(filtered, key=lambda p: len(p.get('issues', [])), reverse=True)
+
+    return filtered
+
+
+# ==========================================
+# 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
     now = now_kst()
@@ -640,9 +702,17 @@ def show_main_page():
         with r4:
             st.markdown(f"<div style='text-align:right; font-size:12px; color:var(--muted-foreground); padding-top:10px; font-family:var(--font-mono);'>기준일자: {now_kst().strftime('%Y. %m. %d. %H:%M')}</div>", unsafe_allow_html=True)
 
-    repo_data = st.session_state['app_data']['repository']
-    total_projects = len(repo_data)
-    unique_authors = len(set([p['author'] for p in repo_data])) if repo_data else 0
+    repo_data_all = st.session_state['app_data']['repository']
+    total_projects = len(repo_data_all)
+    unique_authors = len(set([p['author'] for p in repo_data_all])) if repo_data_all else 0
+
+    all_issues = []
+    for p in repo_data_all:
+        all_issues.extend(p.get('issues', []))
+    total_issues = len(all_issues)
+    open_issues = len([i for i in all_issues if i.get('status') == '진행중'])
+    done_issues = len([i for i in all_issues if i.get('status') == '완료'])
+
     is_admin = (st.session_state.get('user_id') == 'admin')
 
     if is_admin:
@@ -658,7 +728,7 @@ def show_main_page():
         with m2:
             st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
         with m3:
-            st.markdown("<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>0</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 0 / 완료 0</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_issues}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 {open_issues} / 완료 {done_issues}</div></div>", unsafe_allow_html=True)
         with m4:
             st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
 
@@ -667,7 +737,7 @@ def show_main_page():
         with chart_col1:
             with st.container(border=True):
                 st.markdown("##### 프로젝트 활동 현황")
-                if repo_data:
+                if repo_data_all:
                     dates = pd.date_range(end=now_kst().replace(tzinfo=None), periods=7).strftime("%m-%d").tolist()
                     trend_df = pd.DataFrame({
                         "일자": dates,
@@ -686,8 +756,8 @@ def show_main_page():
         with chart_col2:
             with st.container(border=True):
                 st.markdown("##### 분야별 프로젝트 분포")
-                if repo_data:
-                    df_repo = pd.DataFrame(repo_data)
+                if repo_data_all:
+                    df_repo = pd.DataFrame(repo_data_all)
                     cat_counts = df_repo.get('category', pd.Series(['미분류'] * len(df_repo))).value_counts().reset_index()
                     cat_counts.columns = ['분야', '건수']
                     fig_pie = px.pie(
@@ -712,11 +782,11 @@ def show_main_page():
         """, unsafe_allow_html=True)
         st.markdown("##### 최근 활동 프로젝트")
 
-        if not repo_data:
+        if not repo_data_all:
             st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
         else:
-            cols = st.columns(min(len(repo_data), 4))
-            for idx, item in enumerate(repo_data[-4:]):
+            cols = st.columns(min(len(repo_data_all), 4))
+            for idx, item in enumerate(repo_data_all[-4:]):
                 with cols[idx % len(cols)]:
                     cat_val = item.get('category', '일반')
                     st.markdown(f"""
@@ -752,7 +822,7 @@ def show_main_page():
 
                 if st.form_submit_button("저장소에 배포하기"):
                     if proj_name and uploaded_file:
-                        existing_ids = [item['id'] for item in repo_data] if repo_data else [0]
+                        existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
                         new_id = max(existing_ids) + 1 if existing_ids else 1
                         new_item = {
                             "id": new_id,
@@ -763,7 +833,8 @@ def show_main_page():
                             "date": now_kst().strftime("%Y-%m-%d %H:%M"),
                             "filename": uploaded_file.name,
                             "file_data": uploaded_file.read(),
-                            "feedbacks": []
+                            "feedbacks": [],
+                            "issues": []
                         }
                         st.session_state['app_data']['repository'].append(new_item)
                         save_data(st.session_state['app_data'])
@@ -774,12 +845,25 @@ def show_main_page():
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
 
         st.markdown("---")
-        st.markdown("### 커뮤니티 저장소 현황")
 
-        if not repo_data:
-            st.info("아직 공유된 산출물이 없습니다.")
+        filtered_repo = get_filtered_repo()
+        active_filters = []
+        if st.session_state.get('filter_category', '전체') != '전체':
+            active_filters.append(f"분야: {st.session_state['filter_category']}")
+        if st.session_state.get('filter_keyword', '').strip():
+            active_filters.append(f"검색어: '{st.session_state['filter_keyword']}'")
+        filter_desc = f" ({' / '.join(active_filters)} 적용 중)" if active_filters else ""
+
+        st.markdown(f"### 커뮤니티 저장소 현황{filter_desc}")
+        st.caption(f"정렬 기준: {st.session_state.get('filter_sort', '최근 활동순')} · 총 {len(filtered_repo)}건 표시")
+
+        if not filtered_repo:
+            if repo_data_all:
+                st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
+            else:
+                st.info("아직 공유된 산출물이 없습니다.")
         else:
-            for item in reversed(repo_data):
+            for item in filtered_repo:
                 with st.container():
                     st.markdown(f"#### {item['title']} <span style='font-family:var(--font-mono); font-size:11px; background:rgba(0,82,255,0.08); color:var(--accent); padding:3px 10px; border-radius:999px; border:1px solid rgba(0,82,255,0.2);'>{item.get('category', '일반')}</span>", unsafe_allow_html=True)
                     st.markdown(f"**공유자:** {item['author']} | **등록일:** {item['date']}")
@@ -849,6 +933,50 @@ def show_main_page():
                                 save_data(st.session_state['app_data'])
                                 if st.session_state.get('last_save_status') != "fail":
                                     st.rerun()
+
+                    item_issues = item.get('issues', [])
+                    open_cnt = len([i for i in item_issues if i.get('status') == '진행중'])
+                    done_cnt = len([i for i in item_issues if i.get('status') == '완료'])
+                    with st.expander(f"이슈 ({len(item_issues)}건 · 진행중 {open_cnt} / 완료 {done_cnt})"):
+                        if not item_issues:
+                            st.caption("등록된 이슈가 없습니다.")
+                        for iss in item_issues:
+                            badge_class = "issue-badge-open" if iss.get('status') == '진행중' else "issue-badge-done"
+                            ic1, ic2 = st.columns([5, 1.3])
+                            with ic1:
+                                st.markdown(
+                                    f"<span class='{badge_class}'>{iss.get('status')}</span> "
+                                    f"<b>{iss.get('title')}</b> "
+                                    f"<span style='color:#94a3b8; font-size:11px;'>· {iss.get('author')} · {iss.get('date')}</span>",
+                                    unsafe_allow_html=True
+                                )
+                            with ic2:
+                                if can_manage:
+                                    toggle_label = "완료 처리" if iss.get('status') == '진행중' else "재오픈"
+                                    if st.button(toggle_label, key=f"issue_toggle_{item['id']}_{iss['id']}", use_container_width=True):
+                                        iss['status'] = '완료' if iss.get('status') == '진행중' else '진행중'
+                                        save_data(st.session_state['app_data'])
+                                        if st.session_state.get('last_save_status') != "fail":
+                                            st.rerun()
+
+                        new_issue_title = st.text_input("새 이슈 제목", key=f"issue_in_{item['id']}")
+                        if st.button("이슈 등록", key=f"issue_btn_{item['id']}"):
+                            if new_issue_title.strip():
+                                existing_issue_ids = [i['id'] for i in item_issues] if item_issues else [0]
+                                new_issue_id = max(existing_issue_ids) + 1 if existing_issue_ids else 1
+                                item_issues.append({
+                                    "id": new_issue_id,
+                                    "title": new_issue_title.strip(),
+                                    "status": "진행중",
+                                    "author": st.session_state.get('user_id', '익명'),
+                                    "date": now_kst().strftime("%Y-%m-%d %H:%M")
+                                })
+                                item['issues'] = item_issues
+                                save_data(st.session_state['app_data'])
+                                if st.session_state.get('last_save_status') != "fail":
+                                    st.rerun()
+                            else:
+                                st.warning("이슈 제목을 입력해 주세요.")
                 st.markdown("---")
 
     # ---------------- 탭 3: 계정 관리 및 분야 설정 (관리자 전용) ----------------
@@ -946,7 +1074,7 @@ def show_main_page():
 
 
 # ==========================================
-# 5. 사이드바 구성 (로그인 상태일 때만 노출)
+# 6. 사이드바 구성 (로그인 상태일 때만 노출) — 실제 필터 기능 연동
 # ==========================================
 def show_sidebar():
     with st.sidebar:
@@ -957,12 +1085,23 @@ def show_sidebar():
         st.markdown("---")
 
         cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
-        st.selectbox("분야", options=cat_options)
-        st.selectbox("정렬 기준", ["최근 활동순", "별점 높은순", "이슈 많은순"])
-        st.text_input("검색어", placeholder="프로젝트 검색...")
+        if st.session_state['filter_category'] not in cat_options:
+            st.session_state['filter_category'] = "전체"
+
+        st.selectbox("분야", options=cat_options, key="filter_category")
+        st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key="filter_sort")
+        st.text_input("검색어", placeholder="프로젝트 검색...", key="filter_keyword")
+
         cb1, cb2 = st.columns(2)
-        cb1.button("검색", use_container_width=True)
-        cb2.button("초기화", use_container_width=True)
+        with cb1:
+            if st.button("검색", use_container_width=True):
+                st.rerun()
+        with cb2:
+            if st.button("초기화", use_container_width=True):
+                st.session_state['filter_category'] = "전체"
+                st.session_state['filter_sort'] = "최근 활동순"
+                st.session_state['filter_keyword'] = ""
+                st.rerun()
 
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("""
@@ -975,7 +1114,7 @@ def show_sidebar():
 
 
 # ==========================================
-# 6. 최종 라우팅 (로그인 여부에 따라 사이드바 노출 제어)
+# 7. 최종 라우팅 (로그인 여부에 따라 사이드바 노출 제어)
 # ==========================================
 if not st.session_state['logged_in']:
     st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
