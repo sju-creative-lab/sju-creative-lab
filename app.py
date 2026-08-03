@@ -103,6 +103,10 @@ def load_data():
     for item in local_data.get('repository', []):
         if 'issues' not in item or item['issues'] is None:
             item['issues'] = []
+        item.setdefault('completed_at', None)
+
+    if 'timeline_log' not in local_data or local_data['timeline_log'] is None:
+        local_data['timeline_log'] = []
 
     local_users_before_merge = dict(local_data['users_db'])
     local_repo_before_merge = list(local_data['repository'])
@@ -200,6 +204,9 @@ def load_data():
                                     s_item['issues'] = ast.literal_eval(str(s_item['issues']))
                             except Exception:
                                 s_item['issues'] = []
+
+                            if pd.isna(s_item.get('completed_at')):
+                                s_item['completed_at'] = None
 
                             matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
                             if matching_local and 'file_data' in matching_local:
@@ -314,12 +321,19 @@ def save_data(data):
                     repo_df['issues'] = repo_df['issues'].apply(lambda x: str(x))
                 conn.update(worksheet="Repository", data=repo_df)
             else:
-                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks', 'issues'])
+                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks', 'issues', 'completed_at'])
                 conn.update(worksheet="Repository", data=empty_df)
 
             cat_list = data.get('categories', [])
             cat_df = pd.DataFrame({"category": cat_list})
             conn.update(worksheet="Categories", data=cat_df)
+
+            if data.get('timeline_log'):
+                timeline_df = pd.DataFrame(data['timeline_log'])
+                conn.update(worksheet="TimelineLog", data=timeline_df)
+            else:
+                empty_timeline_df = pd.DataFrame(columns=['id', 'title', 'category', 'author', 'started_at', 'completed_at', 'duration_hours'])
+                conn.update(worksheet="TimelineLog", data=empty_timeline_df)
 
             st.session_state['last_save_status'] = "success"
         except Exception as e:
@@ -397,6 +411,34 @@ def ensure_category_exists(dept_name):
     if dept_name and dept_name not in cats:
         cats.append(dept_name)
         st.session_state['app_data']['categories'] = cats
+
+
+def record_timeline_completion(item):
+    """
+    산출물이 '완료' 처리될 때 호출된다.
+    저장소에서 삭제되어도 이 로그는 별도로 영구 보존되지만,
+    화면에 노출되는 타임라인은 '현재 저장소에 남아있는 산출물'만 대상으로 하므로
+    삭제된 산출물은 자동으로 화면에서 제외된다(요청사항 반영).
+    """
+    try:
+        started = datetime.strptime(item['date'], "%Y-%m-%d %H:%M")
+    except Exception:
+        started = None
+    completed = now_kst().replace(tzinfo=None)
+
+    duration_hours = None
+    if started is not None:
+        duration_hours = round((completed - started).total_seconds() / 3600, 1)
+
+    st.session_state['app_data'].setdefault('timeline_log', []).append({
+        "id": item['id'],
+        "title": item['title'],
+        "category": item.get('category', '일반'),
+        "author": item.get('author', ''),
+        "started_at": item['date'],
+        "completed_at": completed.strftime("%Y-%m-%d %H:%M"),
+        "duration_hours": duration_hours
+    })
 
 
 # ==========================================
@@ -575,6 +617,15 @@ def inject_design_system():
     }
     .repo-card-inner { position: relative; }
 
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.board-wrapper-marker) {
+        border-radius: 16px !important;
+        box-shadow: var(--shadow-sm) !important;
+        padding: 18px 20px !important;
+        border: 1px solid var(--border) !important;
+        background-color: var(--card) !important;
+    }
+    .board-wrapper-marker { position: relative; }
+
     .repo-meta-row {
         display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
         margin: 6px 0 10px 0;
@@ -660,6 +711,16 @@ def inject_design_system():
         background: var(--muted); color: var(--muted-foreground); border: 1px solid var(--border);
         padding: 2px 10px; border-radius: 999px;
     }
+    .proj-status-progress {
+        display: inline-block; font-size: 11px; font-family: var(--font-mono);
+        background: rgba(234,88,12,0.1); color: #C2410C; border: 1px solid rgba(234,88,12,0.3);
+        padding: 2px 10px; border-radius: 999px;
+    }
+    .proj-status-done {
+        display: inline-block; font-size: 11px; font-family: var(--font-mono);
+        background: rgba(22,163,74,0.1); color: #15803D; border: 1px solid rgba(22,163,74,0.3);
+        padding: 2px 10px; border-radius: 999px;
+    }
 
     div[data-testid="stButton"] > button {
         border-radius: 10px !important;
@@ -711,7 +772,7 @@ def inject_design_system():
     }
     hr { border-color: var(--border) !important; }
 
-    .board-table { width: 100%; border-collapse: collapse; }
+    .board-table { width: 100%; border-collapse: collapse; background-color: var(--card); }
     .board-table th {
         text-align: left; font-size: 12px; color: var(--muted-foreground);
         border-bottom: 2px solid var(--border); padding: 10px 8px;
@@ -874,16 +935,12 @@ def render_pagination(total_items, page_state_key, key_prefix):
 
 
 def render_board_table(page_items, start_idx):
-    """
-    최근 활동 프로젝트 게시판형 목록을 렌더링한다.
-    반드시 줄바꿈/들여쓰기 없는 한 줄짜리 HTML 문자열로 만들어야
-    Streamlit의 마크다운 파서가 이를 '들여쓰기된 코드 블록'으로
-    오인해서 태그를 텍스트 그대로 출력해버리는 문제를 피할 수 있다.
-    """
     table_rows = ""
     for idx, item in enumerate(page_items):
         row_no = start_idx + idx + 1
         issue_cnt = len(item.get('issues', []))
+        is_done = bool(item.get('completed_at'))
+        status_html = "<span class='proj-status-done'>완료</span>" if is_done else "<span class='proj-status-progress'>진행중</span>"
         table_rows += (
             "<tr>"
             f"<td style='width:40px; color:var(--muted-foreground); font-family:var(--font-mono);'>{row_no}</td>"
@@ -891,6 +948,7 @@ def render_board_table(page_items, start_idx):
             f"<td style='font-weight:600;'>{item['title']}</td>"
             f"<td style='color:var(--muted-foreground);'>{item['author']}</td>"
             f"<td style='color:var(--muted-foreground); font-family:var(--font-mono); font-size:12px;'>{item['date']}</td>"
+            f"<td style='text-align:center;'>{status_html}</td>"
             f"<td style='text-align:center;'>{issue_cnt}</td>"
             "</tr>"
         )
@@ -898,12 +956,92 @@ def render_board_table(page_items, start_idx):
         "<table class='board-table'>"
         "<thead><tr>"
         "<th>#</th><th>부서</th><th>프로젝트명</th><th>담당자</th><th>등록일</th>"
+        "<th style='text-align:center;'>상태</th>"
         "<th style='text-align:center;'>이슈</th>"
         "</tr></thead>"
         f"<tbody>{table_rows}</tbody>"
         "</table>"
     )
-    st.markdown(board_html, unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown("<div class='board-wrapper-marker'></div>", unsafe_allow_html=True)
+        st.markdown(board_html, unsafe_allow_html=True)
+
+
+def render_department_timeline():
+    """
+    부서별 제작 타임라인(간트 차트)을 렌더링한다.
+    - 대상: '현재 저장소에 남아있는' 산출물만 (삭제된 산출물은 완전히 제외)
+    - 시작: 최초 등록일(date)
+    - 종료: 완료 처리된 경우 completed_at, 아직 진행중이면 현재 시각까지 이어지는 것으로 표시
+    """
+    repo_data_all = st.session_state['app_data']['repository']
+    if not repo_data_all:
+        st.info("타임라인을 표시할 산출물이 없습니다.")
+        return
+
+    rows = []
+    for item in repo_data_all:
+        try:
+            start_dt = datetime.strptime(item['date'], "%Y-%m-%d %H:%M")
+        except Exception:
+            continue
+
+        if item.get('completed_at'):
+            try:
+                end_dt = datetime.strptime(item['completed_at'], "%Y-%m-%d %H:%M")
+                status = "완료"
+            except Exception:
+                end_dt = now_kst().replace(tzinfo=None)
+                status = "진행중"
+        else:
+            end_dt = now_kst().replace(tzinfo=None)
+            status = "진행중"
+
+        if end_dt <= start_dt:
+            end_dt = start_dt + timedelta(hours=1)
+
+        rows.append({
+            "부서": item.get('category', '일반'),
+            "프로젝트명": item['title'],
+            "시작": start_dt,
+            "종료": end_dt,
+            "상태": status,
+            "담당자": item.get('author', '')
+        })
+
+    if not rows:
+        st.info("타임라인을 계산할 수 있는 유효한 등록일 데이터가 없습니다.")
+        return
+
+    timeline_df = pd.DataFrame(rows)
+    fig = px.timeline(
+        timeline_df, x_start="시작", x_end="종료", y="프로젝트명",
+        color="부서", hover_data=["담당자", "상태"],
+        color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
+    )
+    fig.update_yaxes(autorange="reversed", title="")
+    fig.update_xaxes(title="")
+    fig.update_layout(
+        height=max(220, 42 * len(timeline_df)),
+        margin=dict(l=10, r=10, t=10, b=10),
+        font=dict(family="Pretendard, sans-serif", color="#0F172A"),
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+        legend_title_text='부서'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    done_rows = [r for r in rows if r["상태"] == "완료"]
+    if done_rows:
+        st.markdown("###### 부서별 평균 제작 소요 시간 (완료된 산출물 기준)")
+        dur_df = pd.DataFrame([
+            {"부서": r["부서"], "소요시간(시간)": round((r["종료"] - r["시작"]).total_seconds() / 3600, 1)}
+            for r in done_rows
+        ])
+        avg_df = dur_df.groupby("부서", as_index=False)["소요시간(시간)"].mean()
+        avg_df["소요시간(시간)"] = avg_df["소요시간(시간)"].round(1)
+        st.dataframe(avg_df, use_container_width=True, hide_index=True)
+    else:
+        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 커뮤니티 저장소 목록에서 산출물을 '완료 처리'해 보세요.")
 
 
 # ==========================================
@@ -1034,6 +1172,12 @@ def show_main_page():
                     st.info("등록된 프로젝트가 없어 부서 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
+        st.markdown("##### 부서별 제작 타임라인")
+        st.caption("등록일부터 완료 처리일까지의 제작 소요 기간을 보여줍니다. (저장소에서 삭제된 산출물은 집계에서 제외됩니다)")
+        with st.container(border=True):
+            render_department_timeline()
+
+        st.write("<br>", unsafe_allow_html=True)
         st.markdown("##### 최근 활동 프로젝트")
         st.caption("좌측 사이드바의 부서/검색어 필터가 이 목록에도 동일하게 적용됩니다.")
 
@@ -1045,15 +1189,12 @@ def show_main_page():
             else:
                 st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
         else:
-            current_dash_page = render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash')
+            current_dash_page = render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash_bottom')
             start_idx = (current_dash_page - 1) * PAGE_SIZE
             end_idx = start_idx + PAGE_SIZE
             page_items = dashboard_filtered[start_idx:end_idx]
 
             render_board_table(page_items, start_idx)
-
-            st.write("")
-            render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash_bottom')
 
     # ---------------- 탭 2: 산출물 커뮤니티 및 저장소 ----------------
     with tab2:
@@ -1101,7 +1242,8 @@ def show_main_page():
                                 "filename": uploaded_file.name,
                                 "file_data": uploaded_file.read(),
                                 "feedbacks": [],
-                                "issues": []
+                                "issues": [],
+                                "completed_at": None
                             }
                             st.session_state['app_data']['repository'].append(new_item)
                             save_data(st.session_state['app_data'])
@@ -1140,11 +1282,13 @@ def show_main_page():
 
                     top_col, action_col = st.columns([5, 2])
                     with top_col:
-                        st.markdown(f"<p class='repo-title'>{item['title']}</p>", unsafe_allow_html=True)
+                        is_done = bool(item.get('completed_at'))
+                        status_html = "<span class='proj-status-done'>완료</span>" if is_done else "<span class='proj-status-progress'>진행중</span>"
+                        st.markdown(f"<p class='repo-title'>{item['title']} {status_html}</p>", unsafe_allow_html=True)
                         st.markdown(f"""
                             <div class='repo-meta-row'>
                                 <span class='repo-cat-badge'>{item.get('category', '일반')}</span>
-                                <span class='repo-author-badge'>{item['author']} · {item['date']}</span>
+                                <span class='repo-author-badge'>{item['author']} · 등록 {item['date']}{' · 완료 ' + item['completed_at'] if is_done else ''}</span>
                             </div>
                         """, unsafe_allow_html=True)
                         st.markdown(f"<p class='repo-desc'>{item['desc']}</p>", unsafe_allow_html=True)
@@ -1172,12 +1316,29 @@ def show_main_page():
                             st.markdown(preview_html, unsafe_allow_html=True)
 
                     if can_manage:
-                        m_col1, m_col2, m_spacer = st.columns([1.3, 1.3, 3.4])
+                        m_col1, m_col2, m_col3, m_spacer = st.columns([1.3, 1.3, 1.3, 2.1])
                         with m_col1:
                             edit_toggle_key = f"edit_toggle_{item['id']}"
                             if st.button("내용 수정", key=f"edit_open_{item['id']}", use_container_width=True):
                                 st.session_state[edit_toggle_key] = not st.session_state.get(edit_toggle_key, False)
                         with m_col2:
+                            if not item.get('completed_at'):
+                                if st.button("완료 처리", key=f"complete_{item['id']}", use_container_width=True):
+                                    completed_time = now_kst().strftime("%Y-%m-%d %H:%M")
+                                    item['completed_at'] = completed_time
+                                    record_timeline_completion(item)
+                                    save_data(st.session_state['app_data'])
+                                    if st.session_state.get('last_save_status') != "fail":
+                                        st.success("완료 처리되었습니다. 제작 타임라인에 기록됩니다.")
+                                        st.rerun()
+                            else:
+                                if st.button("완료 취소", key=f"uncomplete_{item['id']}", use_container_width=True):
+                                    item['completed_at'] = None
+                                    save_data(st.session_state['app_data'])
+                                    if st.session_state.get('last_save_status') != "fail":
+                                        st.success("완료 상태가 취소되어 다시 진행중으로 표시됩니다.")
+                                        st.rerun()
+                        with m_col3:
                             if st.button("산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
                                 st.session_state['app_data']['repository'] = [
                                     p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
@@ -1185,7 +1346,7 @@ def show_main_page():
                                 save_data(st.session_state['app_data'])
                                 if st.session_state.get('last_save_status') == "fail":
                                     st.stop()
-                                st.success("삭제되었습니다.")
+                                st.success("삭제되었습니다. (해당 산출물은 제작 타임라인 집계에서도 제외됩니다)")
                                 st.rerun()
 
                     if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
