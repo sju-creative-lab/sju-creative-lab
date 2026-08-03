@@ -6,13 +6,14 @@ from datetime import datetime, timedelta, timezone
 import pickle
 import os
 import ast
+import base64
 import traceback
 import streamlit.components.v1 as components
 
 # ==========================================
 # 0. 공통 설정
 # ==========================================
-LOGO_IMAGE = "sj_signature04.png"
+LOGO_IMAGE = "logo-main03_1.png"
 DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
@@ -272,6 +273,22 @@ if 'filter_keyword' not in st.session_state:
     st.session_state['filter_keyword'] = ""
 
 
+def get_display_name(user_id):
+    """로그인한 사용자의 '부서명 담당자명' 표기를 반환. 정보가 없으면 아이디로 대체."""
+    users_db = st.session_state['app_data'].get('users_db', {})
+    uinfo = users_db.get(user_id, {})
+    dept = (uinfo.get('dept') or '').strip()
+    manager = (uinfo.get('manager') or '').strip()
+    if dept and manager:
+        return f"{dept} {manager}"
+    elif manager:
+        return manager
+    elif dept:
+        return dept
+    else:
+        return user_id
+
+
 # ==========================================
 # 2. 커스텀 CSS & 자바스크립트 타이머
 # ==========================================
@@ -405,6 +422,9 @@ def inject_design_system():
         box-shadow: var(--shadow-lg);
         transform: translateY(-3px);
     }
+    .metric-card .label { font-size: 12px; color: var(--muted-foreground); font-weight: bold; }
+    .metric-card .value { font-size: 28px; font-weight: 800; color: var(--foreground); }
+    .metric-card .sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 16px !important;
@@ -423,6 +443,36 @@ def inject_design_system():
         margin-top: 24px;
     }
     .login-hero-inner { position: relative; }
+
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.repo-card-inner) {
+        border-radius: 18px !important;
+        box-shadow: var(--shadow-sm) !important;
+        padding: 20px 22px !important;
+        margin-bottom: 18px;
+        animation: fadeInUp 0.5s ease-out;
+        border: 1px solid var(--border) !important;
+        transition: box-shadow 0.25s ease-out, transform 0.25s ease-out;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.repo-card-inner):hover {
+        box-shadow: var(--shadow-accent) !important;
+        transform: translateY(-2px);
+    }
+    .repo-card-inner { position: relative; }
+
+    .repo-meta-row {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        margin: 6px 0 10px 0;
+    }
+    .repo-cat-badge {
+        font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+        background: rgba(0,82,255,0.08); padding: 3px 10px; border-radius: 999px;
+        border: 1px solid rgba(0,82,255,0.2);
+    }
+    .repo-author-badge {
+        font-size: 12px; color: var(--muted-foreground);
+    }
+    .repo-title { font-size: 19px; font-weight: 800; color: var(--foreground); margin: 0; }
+    .repo-desc { font-size: 13px; color: #475569; margin: 4px 0 4px 0; }
 
     .project-card {
         background-color: var(--card);
@@ -675,6 +725,9 @@ def show_main_page():
 
     col_title, col_ui = st.columns([5, 5])
 
+    current_user_id = st.session_state.get('user_id', '')
+    display_name = get_display_name(current_user_id)
+
     with col_title:
         st.markdown("""
             <div class='section-badge'>
@@ -683,7 +736,7 @@ def show_main_page():
             </div>
         """, unsafe_allow_html=True)
         st.markdown(f"### 공공 개발 산출물 저장소(공공 GitHub) <span class='gradient-text'>프로젝트 현황</span>", unsafe_allow_html=True)
-        st.caption(f"환영합니다, **{st.session_state.get('user_id', '사용자')}**님")
+        st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
         r1, r2, r3, r4 = st.columns([1, 1, 1, 1.5])
@@ -713,7 +766,9 @@ def show_main_page():
     open_issues = len([i for i in all_issues if i.get('status') == '진행중'])
     done_issues = len([i for i in all_issues if i.get('status') == '완료'])
 
-    is_admin = (st.session_state.get('user_id') == 'admin')
+    total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
+
+    is_admin = (current_user_id == 'admin')
 
     if is_admin:
         tab1, tab2, tab3 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소", "계정 관리"])
@@ -724,13 +779,13 @@ def show_main_page():
     with tab1:
         m1, m2, m3, m4 = st.columns(4)
         with m1:
-            st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><div class='label'>전체 프로젝트</div><div class='value'>{total_projects}</div><div class='sub'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
         with m2:
-            st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>월간 프로젝트</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_projects}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>최근 30일 활동</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><div class='label'>월간 프로젝트</div><div class='value'>{total_projects}</div><div class='sub'>최근 30일 활동</div></div>", unsafe_allow_html=True)
         with m3:
-            st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>전체 이슈</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{total_issues}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>진행중 {open_issues} / 완료 {done_issues}</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><div class='label'>전체 이슈</div><div class='value'>{total_issues}</div><div class='sub'>진행중 {open_issues} / 완료 {done_issues}</div></div>", unsafe_allow_html=True)
         with m4:
-            st.markdown(f"<div class='metric-card'><div style='font-size: 12px; color: var(--muted-foreground); font-weight: bold;'>프로젝트 담당자</div><div style='font-size: 28px; font-weight: 800; color: var(--foreground);'>{unique_authors}</div><div style='font-size: 11px; color: #94a3b8; margin-top: 4px;'>참여 개발자 수</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><div class='label'>프로젝트 담당자</div><div class='value'>{unique_authors}</div><div class='sub'>참여 개발자 수</div></div>", unsafe_allow_html=True)
 
         st.write("<br>", unsafe_allow_html=True)
         chart_col1, chart_col2 = st.columns([6, 4])
@@ -811,14 +866,32 @@ def show_main_page():
                 <span class='label'>Community Repository</span>
             </div>
         """, unsafe_allow_html=True)
-        st.markdown("### 산출물 업로드 및 피드백")
-        with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
+        st.markdown("### 산출물 커뮤니티 및 저장소")
+        st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
+
+        rm1, rm2, rm3, rm4 = st.columns(4)
+        with rm1:
+            st.markdown(f"<div class='metric-card'><div class='label'>전체 산출물</div><div class='value'>{total_projects}</div><div class='sub'>커뮤니티 공개 기준</div></div>", unsafe_allow_html=True)
+        with rm2:
+            st.markdown(f"<div class='metric-card'><div class='label'>참여 담당자</div><div class='value'>{unique_authors}</div><div class='sub'>산출물 공유자 수</div></div>", unsafe_allow_html=True)
+        with rm3:
+            st.markdown(f"<div class='metric-card'><div class='label'>누적 피드백</div><div class='value'>{total_feedbacks}</div><div class='sub'>커뮤니티 토론 건수</div></div>", unsafe_allow_html=True)
+        with rm4:
+            st.markdown(f"<div class='metric-card'><div class='label'>전체 이슈</div><div class='value'>{total_issues}</div><div class='sub'>진행중 {open_issues} / 완료 {done_issues}</div></div>", unsafe_allow_html=True)
+
+        st.write("<br>", unsafe_allow_html=True)
+
+        with st.expander("➕ 새로운 산출물(결과물) 업로드 하기", expanded=False):
             with st.form("upload_form", clear_on_submit=True):
                 proj_name = st.text_input("프로젝트 명")
                 categories_list = st.session_state['app_data'].get('categories', ['전체', '교무처', '학생처', '총무처', '기획처', '단과대학', '기타'])
                 proj_cat = st.selectbox("분야 선택", options=[c for c in categories_list if c != '전체'])
                 proj_desc = st.text_area("산출물 설명")
-                uploaded_file = st.file_uploader("산출물 파일 첨부", type=['zip', 'pdf', 'py', 'csv', 'txt', 'xlsx'])
+                uploaded_file = st.file_uploader(
+                    "산출물 파일 첨부",
+                    type=['zip', 'pdf', 'py', 'csv', 'txt', 'xlsx', 'html']
+                )
+                st.caption("ℹ️ 보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. `.html` 파일은 새 창에서 미리보기가 가능합니다.")
 
                 if st.form_submit_button("저장소에 배포하기"):
                     if proj_name and uploaded_file:
@@ -854,42 +927,63 @@ def show_main_page():
             active_filters.append(f"검색어: '{st.session_state['filter_keyword']}'")
         filter_desc = f" ({' / '.join(active_filters)} 적용 중)" if active_filters else ""
 
-        st.markdown(f"### 커뮤니티 저장소 현황{filter_desc}")
-        st.caption(f"정렬 기준: {st.session_state.get('filter_sort', '최근 활동순')} · 총 {len(filtered_repo)}건 표시")
+        h1, h2 = st.columns([4, 2])
+        with h1:
+            st.markdown(f"#### 📂 커뮤니티 저장소 목록{filter_desc}")
+        with h2:
+            st.markdown(f"<div style='text-align:right; padding-top:8px; color:var(--muted-foreground); font-size:13px;'>정렬: {st.session_state.get('filter_sort', '최근 활동순')} · 총 {len(filtered_repo)}건</div>", unsafe_allow_html=True)
 
         if not filtered_repo:
             if repo_data_all:
                 st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
             else:
-                st.info("아직 공유된 산출물이 없습니다.")
+                st.info("아직 공유된 산출물이 없습니다. 위의 업로드 영역에서 첫 산출물을 공유해 보세요.")
         else:
             for item in filtered_repo:
-                with st.container():
-                    st.markdown(f"#### {item['title']} <span style='font-family:var(--font-mono); font-size:11px; background:rgba(0,82,255,0.08); color:var(--accent); padding:3px 10px; border-radius:999px; border:1px solid rgba(0,82,255,0.2);'>{item.get('category', '일반')}</span>", unsafe_allow_html=True)
-                    st.markdown(f"**공유자:** {item['author']} | **등록일:** {item['date']}")
-                    st.write(item['desc'])
+                with st.container(border=True):
+                    st.markdown("<div class='repo-card-inner'>", unsafe_allow_html=True)
+
+                    top_col, action_col = st.columns([5, 2])
+                    with top_col:
+                        st.markdown(f"<p class='repo-title'>{item['title']}</p>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                            <div class='repo-meta-row'>
+                                <span class='repo-cat-badge'>{item.get('category', '일반')}</span>
+                                <span class='repo-author-badge'>👤 {item['author']} · 🗓️ {item['date']}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown(f"<p class='repo-desc'>{item['desc']}</p>", unsafe_allow_html=True)
 
                     current_user = st.session_state.get('user_id')
                     can_manage = (current_user == item['author'] or current_user == 'admin')
 
-                    if can_manage:
-                        btn_col1, btn_col2, btn_col3, btn_spacer = st.columns([1.2, 1.2, 1.2, 3.4])
-                    else:
-                        btn_col1, btn_spacer = st.columns([1.2, 4.8])
-
-                    with btn_col1:
+                    with action_col:
+                        file_ext = item['filename'].split('.')[-1].lower() if item.get('filename') else ''
                         if item.get('file_data'):
-                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item['filename'], mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                            st.download_button(label="⬇️ 파일 다운로드", data=item['file_data'], file_name=item['filename'], mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
                         else:
                             st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
 
+                        if item.get('file_data') and file_ext == 'html':
+                            b64 = base64.b64encode(item['file_data']).decode()
+                            preview_html = f"""
+                                <a href="data:text/html;base64,{b64}" target="_blank"
+                                   style="display:block; text-align:center; padding:8px 0; margin-top:6px;
+                                          background:#0F172A; color:white; border-radius:10px;
+                                          font-size:14px; text-decoration:none; font-weight:500;">
+                                   🖥️ 새 창에서 미리보기
+                                </a>
+                            """
+                            st.markdown(preview_html, unsafe_allow_html=True)
+
                     if can_manage:
-                        with btn_col2:
+                        m_col1, m_col2, m_spacer = st.columns([1.3, 1.3, 3.4])
+                        with m_col1:
                             edit_toggle_key = f"edit_toggle_{item['id']}"
-                            if st.button("내용 수정", key=f"edit_open_{item['id']}", use_container_width=True):
+                            if st.button("✏️ 내용 수정", key=f"edit_open_{item['id']}", use_container_width=True):
                                 st.session_state[edit_toggle_key] = not st.session_state.get(edit_toggle_key, False)
-                        with btn_col3:
-                            if st.button("산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
+                        with m_col2:
+                            if st.button("🗑️ 산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
                                 st.session_state['app_data']['repository'] = [
                                     p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
                                 ]
@@ -913,16 +1007,24 @@ def show_main_page():
                                     st.success("수정되었습니다.")
                                     st.rerun()
 
+                    st.write("")
+
                     if item.get('file_data'):
-                        file_ext = item['filename'].split('.')[-1].lower()
                         if file_ext in ['py', 'txt', 'csv']:
-                            with st.expander(f"파일 미리보기 ({item['filename']})"):
+                            with st.expander(f"📄 파일 미리보기 ({item['filename']})"):
                                 try:
                                     st.code(item['file_data'].decode('utf-8'), language='python' if file_ext == 'py' else 'text')
                                 except Exception:
                                     st.error("텍스트로 미리볼 수 없는 인코딩입니다.")
+                        elif file_ext == 'html':
+                            with st.expander(f"📄 파일 미리보기 ({item['filename']})"):
+                                st.caption("아래는 페이지 내 임베드 미리보기입니다. 전체 화면으로 보려면 위쪽의 '새 창에서 미리보기' 버튼을 이용해 주세요.")
+                                try:
+                                    components.html(item['file_data'].decode('utf-8'), height=400, scrolling=True)
+                                except Exception:
+                                    st.error("HTML 미리보기를 렌더링할 수 없습니다.")
 
-                    with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
+                    with st.expander(f"💬 피드백 및 토론 ({len(item['feedbacks'])}건)"):
                         for fb in item['feedbacks']:
                             st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb['user']}</b> <span style='color:#94a3b8; font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
 
@@ -937,12 +1039,12 @@ def show_main_page():
                     item_issues = item.get('issues', [])
                     open_cnt = len([i for i in item_issues if i.get('status') == '진행중'])
                     done_cnt = len([i for i in item_issues if i.get('status') == '완료'])
-                    with st.expander(f"이슈 ({len(item_issues)}건 · 진행중 {open_cnt} / 완료 {done_cnt})"):
+                    with st.expander(f"🐞 이슈 ({len(item_issues)}건 · 진행중 {open_cnt} / 완료 {done_cnt})"):
                         if not item_issues:
                             st.caption("등록된 이슈가 없습니다.")
                         for iss in item_issues:
                             badge_class = "issue-badge-open" if iss.get('status') == '진행중' else "issue-badge-done"
-                            ic1, ic2 = st.columns([5, 1.3])
+                            ic1, ic2, ic3 = st.columns([4.5, 1.1, 1.1])
                             with ic1:
                                 st.markdown(
                                     f"<span class='{badge_class}'>{iss.get('status')}</span> "
@@ -957,6 +1059,14 @@ def show_main_page():
                                         iss['status'] = '완료' if iss.get('status') == '진행중' else '진행중'
                                         save_data(st.session_state['app_data'])
                                         if st.session_state.get('last_save_status') != "fail":
+                                            st.rerun()
+                            with ic3:
+                                if current_user == 'admin':
+                                    if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", use_container_width=True):
+                                        item['issues'] = [i for i in item_issues if i['id'] != iss['id']]
+                                        save_data(st.session_state['app_data'])
+                                        if st.session_state.get('last_save_status') != "fail":
+                                            st.success("이슈가 삭제되었습니다.")
                                             st.rerun()
 
                         new_issue_title = st.text_input("새 이슈 제목", key=f"issue_in_{item['id']}")
@@ -977,7 +1087,8 @@ def show_main_page():
                                     st.rerun()
                             else:
                                 st.warning("이슈 제목을 입력해 주세요.")
-                st.markdown("---")
+
+                    st.markdown("</div>", unsafe_allow_html=True)
 
     # ---------------- 탭 3: 계정 관리 및 분야 설정 (관리자 전용) ----------------
     if is_admin:
@@ -1049,6 +1160,20 @@ def show_main_page():
                     if st.session_state.get('last_save_status') != "fail":
                         st.success(f"분야 [{rem_cat}]가 삭제되었습니다.")
                         st.rerun()
+
+            st.markdown("---")
+            st.markdown("### ⚙️ 앱 절전(Sleep) 모드 관련 안내")
+            st.info(
+                "Streamlit Community Cloud(무료 플랜)는 일정 시간 접속이 없으면 앱을 자동으로 절전 상태로 전환하는 "
+                "플랫폼 정책을 가지고 있습니다. 이는 앱 코드 내부에서 해결할 수 없는 부분이며, 아래와 같은 방법을 "
+                "외부에서 별도로 설정해야 합니다.\n\n"
+                "1. UptimeRobot, cron-job.org 같은 무료 외부 모니터링 서비스에 이 앱의 URL을 등록하고, "
+                "5~10분 간격으로 자동 접속(ping)하도록 설정합니다.\n"
+                "2. 지속적인 무중단 운영이 꼭 필요하다면, Streamlit의 유료 플랜이나 별도의 상시 구동 호스팅(예: 자체 서버, "
+                "Render, Railway 등)으로 이전을 검토해 주세요.\n\n"
+                "※ 이 안내는 Streamlit Cloud의 일반적으로 알려진 정책에 기반한 것으로, 최신 정확한 정책은 "
+                "Streamlit 공식 문서에서 다시 확인해 주시기 바랍니다."
+            )
 
             st.markdown("---")
             st.markdown("### 🔍 Google Sheets 연동 진단 로그")
