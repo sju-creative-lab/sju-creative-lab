@@ -25,6 +25,37 @@ def now_kst():
     return datetime.now(KST)
 
 
+def safe_show_logo(width=None, use_container_width=False):
+    """
+    로고 이미지 출력을 시도하되, 파일이 없거나 손상되어 있어도
+    앱 전체가 MediaFileStorageError로 죽지 않도록 방어하는 함수.
+    실제 원인(파일 누락)은 이 함수로 해결되지 않으며,
+    저장소에 logo-main03_1.png 파일을 올바른 경로/이름으로 커밋해야 근본 해결됩니다.
+    """
+    try:
+        if os.path.exists(LOGO_IMAGE):
+            if width:
+                st.image(LOGO_IMAGE, width=width)
+            else:
+                st.image(LOGO_IMAGE, use_container_width=use_container_width)
+        else:
+            st.markdown(
+                "<div style='text-align:center; padding:14px; border:1px dashed var(--border); "
+                "border-radius:12px; color:var(--muted-foreground); font-size:12px;'>"
+                "⚠️ 로고 이미지(logo-main03_1.png)를 찾을 수 없습니다.<br>저장소에 파일을 업로드해 주세요."
+                "</div>",
+                unsafe_allow_html=True
+            )
+    except Exception as e:
+        st.markdown(
+            f"<div style='text-align:center; padding:14px; border:1px dashed var(--border); "
+            f"border-radius:12px; color:var(--muted-foreground); font-size:12px;'>"
+            f"⚠️ 로고 이미지를 불러오는 중 오류가 발생했습니다: {type(e).__name__}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+
 # ==========================================
 # 1. DB 연동 (구글 시트 & 로컬 하이브리드)
 # ==========================================
@@ -613,7 +644,7 @@ def show_login_page():
 
             _, logo_col, _ = st.columns([1, 1.2, 1])
             with logo_col:
-                st.image(LOGO_IMAGE, width=200)
+                safe_show_logo(width=200)
 
             st.markdown("""
                 <div style='text-align:center; margin-top:10px;'>
@@ -1205,7 +1236,7 @@ def show_sidebar():
     with st.sidebar:
         col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
         with col_side2:
-            st.image(LOGO_IMAGE, use_container_width=True)
+            safe_show_logo(use_container_width=True)
         st.markdown("<h3 style='text-align:center;'>AI 서정 실험실</h3>", unsafe_allow_html=True)
         st.markdown("---")
 
