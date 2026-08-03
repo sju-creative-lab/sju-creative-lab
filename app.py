@@ -8,6 +8,7 @@ import os
 import ast
 import base64
 import traceback
+import math
 import streamlit.components.v1 as components
 
 # ==========================================
@@ -17,6 +18,7 @@ LOGO_IMAGE = "sj_signature04.png"
 DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
+PAGE_SIZE = 10
 
 st.set_page_config(page_title="교육혁신처 AI Creative Lab 산출물 저장소", layout="wide", initial_sidebar_state="expanded")
 
@@ -148,7 +150,6 @@ def load_data():
                             if uid == "admin":
                                 approved = True
                             merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved}
-                        # 로컬에만 있는 계정 병합 시에도 삭제 목록은 반드시 재확인
                         for uid, uinfo in local_users_before_merge.items():
                             if uid not in merged_users and uid not in deleted_ids_set:
                                 merged_users[uid] = uinfo
@@ -224,7 +225,7 @@ def load_data():
                     elif not cat_df.empty and 'category' not in cat_df.columns:
                         _log(f"⚠️ Categories 시트에 'category' 헤더가 없습니다. 실제 컬럼명: {list(cat_df.columns)}", "warn")
                     else:
-                        _log("ℹ️ Categories 시트가 비어 있습니다. 로컬 기본 분야 목록을 사용합니다.", "warn")
+                        _log("ℹ️ Categories 시트가 비어 있습니다. 로컬 기본 부서 목록을 사용합니다.", "warn")
                 except Exception as e_cat:
                     _log(f"❌ Categories 시트 읽기 실패: {_fmt_err(e_cat, 'categories_read')}", "error")
                     _log("⚠️ Categories 시트가 아직 없다면, 구글 스프레드시트에 'Categories'라는 이름의 탭을 만들고 A1 셀에 'category' 헤더를 입력해주세요.", "warn")
@@ -238,15 +239,6 @@ def load_data():
 
 
 def save_data(data):
-    """
-    저장 시 주의사항:
-    Google Sheets 모드에서는 절대로 '이 세션이 들고 있는 users_db 스냅샷'을
-    그대로 시트에 덮어쓰지 않는다.
-    반드시 저장 직전에 시트의 최신 상태를 다시 읽어와서
-    (1) 다른 세션이 그 사이 추가했을 수 있는 계정은 보존하고
-    (2) deleted_ids에 있는 계정은 어떤 경우에도 최종적으로 제외한 뒤
-    병합된 결과만 다시 써야, '삭제했는데 되살아나는' 문제가 재발하지 않는다.
-    """
     with open(DATA_FILE, "wb") as f:
         pickle.dump(data, f)
 
@@ -352,6 +344,11 @@ _cat_key = f"filter_category_{_reset_suffix}"
 _sort_key = f"filter_sort_{_reset_suffix}"
 _kw_key = f"filter_keyword_{_reset_suffix}"
 
+if 'repo_page' not in st.session_state:
+    st.session_state['repo_page'] = 1
+if 'dashboard_page' not in st.session_state:
+    st.session_state['dashboard_page'] = 1
+
 
 def get_display_name(user_id):
     users_db = st.session_state['app_data'].get('users_db', {})
@@ -366,6 +363,20 @@ def get_display_name(user_id):
         return dept
     else:
         return user_id
+
+
+def get_user_dept(user_id):
+    users_db = st.session_state['app_data'].get('users_db', {})
+    uinfo = users_db.get(user_id, {})
+    dept = (uinfo.get('dept') or '').strip()
+    return dept if dept else "기타"
+
+
+def ensure_category_exists(dept_name):
+    cats = st.session_state['app_data'].get('categories', [])
+    if dept_name and dept_name not in cats:
+        cats.append(dept_name)
+        st.session_state['app_data']['categories'] = cats
 
 
 # ==========================================
@@ -394,7 +405,7 @@ def inject_timer_js():
 
 
 # ==========================================
-# 2-1. 디자인 토큰 & 전역 스타일 (이전 CSS로 롤백된 상태)
+# 2-1. 디자인 토큰 & 전역 스타일
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -403,7 +414,7 @@ def inject_design_system():
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
     :root {
-        --background: #FAFAFA;
+        --background: #FFFFFF;
         --foreground: #0F172A;
         --muted: #F1F5F9;
         --muted-foreground: #64748B;
@@ -426,35 +437,31 @@ def inject_design_system():
         --shadow-accent-lg: 0 8px 24px rgba(0,82,255,0.35);
     }
 
-    @media (prefers-color-scheme: dark) {
-        :root {
-            --background: #0B1120;
-            --foreground: #F1F5F9;
-            --muted: #1E293B;
-            --muted-foreground: #94A3B8;
-            --accent: #4D7CFF;
-            --accent-secondary: #7fa4ff;
-            --accent-foreground: #0B1120;
-            --border: #293548;
-            --card: #111827;
-            --ring: #4D7CFF;
-
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.35);
-            --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
-            --shadow-lg: 0 10px 15px rgba(0,0,0,0.45);
-            --shadow-xl: 0 20px 25px rgba(0,0,0,0.5);
-            --shadow-accent: 0 4px 14px rgba(77,124,255,0.3);
-            --shadow-accent-lg: 0 8px 24px rgba(77,124,255,0.4);
-        }
-    }
-
     html, body, .stApp, [class*="css"] {
         font-family: var(--font-body) !important;
     }
+
     .stApp {
-        background-color: var(--background);
         color: var(--foreground);
+        background-color: var(--background) !important;
+        background-image:
+            radial-gradient(circle at 15% 20%, rgba(0,82,255,0.07) 0%, transparent 45%),
+            radial-gradient(circle at 85% 30%, rgba(77,124,255,0.07) 0%, transparent 45%),
+            radial-gradient(circle at 50% 85%, rgba(0,82,255,0.05) 0%, transparent 50%);
+        background-repeat: no-repeat;
+        background-size: 200% 200%;
+        animation: bgFloat 22s ease-in-out infinite;
     }
+    @keyframes bgFloat {
+        0%   { background-position: 0% 0%, 100% 0%, 50% 100%; }
+        50%  { background-position: 30% 30%, 70% 40%, 60% 70%; }
+        100% { background-position: 0% 0%, 100% 0%, 50% 100%; }
+    }
+
+    [data-testid="stSidebar"] {
+        background-color: var(--background) !important;
+    }
+
     h1, h2, h3 {
         font-family: var(--font-display) !important;
         font-weight: 800;
@@ -479,35 +486,6 @@ def inject_design_system():
         background-clip: text;
         color: transparent;
         display: inline-block;
-    }
-
-    .section-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(0,82,255,0.3);
-        background: rgba(0,82,255,0.05);
-        padding: 6px 18px;
-        margin-bottom: 10px;
-    }
-    .section-badge .dot {
-        width: 8px; height: 8px; border-radius: 50%;
-        background: var(--accent);
-        animation: pulse-dot 2s infinite;
-        flex-shrink: 0;
-    }
-    .section-badge .label {
-        font-family: var(--font-mono);
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.15em;
-        color: var(--accent);
-        white-space: nowrap;
-    }
-    @keyframes pulse-dot {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.3); opacity: 0.7; }
     }
 
     .metric-card {
@@ -542,6 +520,7 @@ def inject_design_system():
         padding: 12px 24px 24px 24px !important;
         animation: fadeInUp 0.7s ease-out;
         margin-top: 24px;
+        background-color: var(--card) !important;
     }
     .login-hero-inner { position: relative; }
 
@@ -575,28 +554,6 @@ def inject_design_system():
     .repo-title { font-size: 19px; font-weight: 800; color: var(--foreground); margin: 0; }
     .repo-desc { font-size: 13px; color: var(--muted-foreground); margin: 4px 0 4px 0; }
 
-    .repo-section-label {
-        font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em;
-        color: var(--muted-foreground); text-transform: uppercase; margin: 4px 0 6px 0;
-    }
-
-    .project-card {
-        background-color: var(--card);
-        padding: 16px;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        height: 190px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        box-shadow: var(--shadow-sm);
-        transition: box-shadow 0.25s ease-out, transform 0.25s ease-out;
-        animation: fadeInUp 0.6s ease-out;
-    }
-    .project-card:hover {
-        box-shadow: var(--shadow-accent);
-        transform: translateY(-2px);
-    }
     @keyframes fadeInUp {
         from { opacity: 0; transform: translateY(16px); }
         to { opacity: 1; transform: translateY(0); }
@@ -695,12 +652,35 @@ def inject_design_system():
     div[data-testid="stTextInput"] input, div[data-testid="stTextArea"] textarea {
         border-radius: 10px !important;
         border: 1px solid var(--border) !important;
+        background-color: var(--card) !important;
+        color: var(--foreground) !important;
     }
     div[data-testid="stTextInput"] input:focus, div[data-testid="stTextArea"] textarea:focus {
         border-color: var(--accent) !important;
         box-shadow: 0 0 0 2px rgba(0,82,255,0.25) !important;
     }
+    div[data-testid="stTextInput"] input::placeholder, div[data-testid="stTextArea"] textarea::placeholder {
+        color: var(--muted-foreground) !important;
+        opacity: 0.7 !important;
+    }
     hr { border-color: var(--border) !important; }
+
+    .board-table { width: 100%; border-collapse: collapse; }
+    .board-table th {
+        text-align: left; font-size: 12px; color: var(--muted-foreground);
+        border-bottom: 2px solid var(--border); padding: 10px 8px;
+        font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .board-table td {
+        padding: 12px 8px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--foreground);
+        vertical-align: middle;
+    }
+    .board-table tr:hover td { background-color: var(--muted); }
+    .board-dept-badge {
+        font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+        background: rgba(0,82,255,0.08); padding: 2px 8px; border-radius: 999px;
+        border: 1px solid rgba(0,82,255,0.2); white-space: nowrap;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -722,18 +702,14 @@ def show_login_page():
                 safe_show_logo(width=200)
 
             st.markdown("""
-                <div style='text-align:center; margin-top:10px;'>
-                    <div class='section-badge' style='margin-bottom:14px;'>
-                        <span class='dot'></span>
-                        <span class='label'>Public Dev Repository</span>
-                    </div>
+                <div style='text-align:center; margin-top:14px;'>
+                    <h2 style='text-align: center; margin-top: 4px;'>
+                        교육혁신처 AI Creative Lab <span class='gradient-text'>산출물 저장소</span>
+                    </h2>
+                    <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>
+                        대학 구성원의 개발 산출물을 안전하게 공유하고 관리하세요
+                    </p>
                 </div>
-                <h2 style='text-align: center; margin-top: 4px;'>
-                    교육혁신처 AI Creative Lab <span class='gradient-text'>산출물 저장소</span>
-                </h2>
-                <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>
-                    대학 구성원의 개발 산출물을 안전하게 공유하고 관리하세요
-                </p>
             """, unsafe_allow_html=True)
             st.write("<br>", unsafe_allow_html=True)
 
@@ -741,8 +717,8 @@ def show_login_page():
 
             with tab_login:
                 with st.form("login_form"):
-                    user_id = st.text_input("ID 또는 이메일", key="login_id")
-                    password = st.text_input("패스워드", type="password", key="login_pw")
+                    user_id = st.text_input("ID 또는 이메일", key="login_id", placeholder="예: hongildong")
+                    password = st.text_input("패스워드", type="password", key="login_pw", placeholder="비밀번호를 입력하세요")
                     st.write("<br>", unsafe_allow_html=True)
                     login_submit = st.form_submit_button("로그인", use_container_width=True)
 
@@ -762,11 +738,11 @@ def show_login_page():
 
             with tab_signup:
                 with st.form("signup_form"):
-                    new_dept = st.text_input("부서명", key="signup_dept")
-                    new_manager = st.text_input("담당자명", key="signup_manager")
-                    new_id = st.text_input("새 ID", key="signup_id")
-                    new_pw = st.text_input("새 패스워드", type="password", key="signup_pw")
-                    new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk")
+                    new_dept = st.text_input("부서명", key="signup_dept", placeholder="예: 교육혁신처")
+                    new_manager = st.text_input("담당자명", key="signup_manager", placeholder="예: 홍길동")
+                    new_id = st.text_input("새 ID", key="signup_id", placeholder="예: hongildong01")
+                    new_pw = st.text_input("새 패스워드", type="password", key="signup_pw", placeholder="영문/숫자 조합 8자 이상 권장")
+                    new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk", placeholder="비밀번호를 한번 더 입력하세요")
                     signup_submit = st.form_submit_button("계정 생성하기", use_container_width=True)
 
                 if signup_submit:
@@ -786,6 +762,7 @@ def show_login_page():
                         }
                         if new_id in st.session_state['app_data'].get('deleted_ids', []):
                             st.session_state['app_data']['deleted_ids'].remove(new_id)
+                        ensure_category_exists(new_dept.strip())
                         save_data(st.session_state['app_data'])
                         if st.session_state.get('last_save_status') != "fail":
                             st.success("계정 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.")
@@ -793,6 +770,7 @@ def show_login_page():
 
 # ==========================================
 # 4. 사이드바 필터가 반영된 저장소 데이터 조회 함수
+#    (탭1, 탭2 공통으로 사용)
 # ==========================================
 def get_filtered_repo():
     repo_data = st.session_state['app_data']['repository']
@@ -819,6 +797,36 @@ def get_filtered_repo():
     return filtered
 
 
+def render_pagination(total_items, page_state_key, key_prefix):
+    total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
+    current_page = st.session_state.get(page_state_key, 1)
+    if current_page > total_pages:
+        current_page = total_pages
+        st.session_state[page_state_key] = current_page
+
+    p1, p2, p3, p4, p5 = st.columns([1, 1, 2, 1, 1])
+    with p1:
+        if st.button("« 처음", key=f"{key_prefix}_first", use_container_width=True, disabled=(current_page <= 1)):
+            st.session_state[page_state_key] = 1
+            st.rerun()
+    with p2:
+        if st.button("‹ 이전", key=f"{key_prefix}_prev", use_container_width=True, disabled=(current_page <= 1)):
+            st.session_state[page_state_key] = current_page - 1
+            st.rerun()
+    with p3:
+        st.markdown(f"<div style='text-align:center; padding-top:8px; font-size:13px; color:var(--muted-foreground);'>{current_page} / {total_pages} 페이지 (총 {total_items}건)</div>", unsafe_allow_html=True)
+    with p4:
+        if st.button("다음 ›", key=f"{key_prefix}_next", use_container_width=True, disabled=(current_page >= total_pages)):
+            st.session_state[page_state_key] = current_page + 1
+            st.rerun()
+    with p5:
+        if st.button("마지막 »", key=f"{key_prefix}_last", use_container_width=True, disabled=(current_page >= total_pages)):
+            st.session_state[page_state_key] = total_pages
+            st.rerun()
+
+    return current_page
+
+
 # ==========================================
 # 5. 메인 대시보드 화면
 # ==========================================
@@ -835,12 +843,6 @@ def show_main_page():
     display_name = get_display_name(current_user_id)
 
     with col_title:
-        st.markdown("""
-            <div class='section-badge'>
-                <span class='dot'></span>
-                <span class='label'>Live Dashboard</span>
-            </div>
-        """, unsafe_allow_html=True)
         st.markdown(f"### 교육혁신처 AI Creative Lab 산출물 저장소(GitHub) <span class='gradient-text'>프로젝트 현황</span>", unsafe_allow_html=True)
         st.caption(f"환영합니다, **{display_name}**님")
 
@@ -934,13 +936,13 @@ def show_main_page():
                     st.info("시각화할 프로젝트 데이터가 부족합니다.")
         with chart_col2:
             with st.container(border=True):
-                st.markdown("##### 분야별 프로젝트 분포")
+                st.markdown("##### 부서별 프로젝트 분포")
                 if repo_data_all:
                     df_repo = pd.DataFrame(repo_data_all)
                     cat_counts = df_repo.get('category', pd.Series(['미분류'] * len(df_repo))).value_counts().reset_index()
-                    cat_counts.columns = ['분야', '건수']
+                    cat_counts.columns = ['부서', '건수']
                     fig_pie = px.pie(
-                        cat_counts, values='건수', names='분야', hole=0.65,
+                        cat_counts, values='건수', names='부서', hole=0.65,
                         color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
                     )
                     fig_pie.update_layout(
@@ -950,46 +952,62 @@ def show_main_page():
                     )
                     st.plotly_chart(fig_pie, use_container_width=True)
                 else:
-                    st.info("등록된 프로젝트가 없어 분야 분포를 표시할 수 없습니다.")
+                    st.info("등록된 프로젝트가 없어 부서 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
-        st.markdown("""
-            <div class='section-badge'>
-                <span class='dot'></span>
-                <span class='label'>Recent Activity</span>
-            </div>
-        """, unsafe_allow_html=True)
         st.markdown("##### 최근 활동 프로젝트")
+        st.caption("좌측 사이드바의 부서/검색어 필터가 이 목록에도 동일하게 적용됩니다.")
 
-        if not repo_data_all:
-            st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
+        dashboard_filtered = get_filtered_repo()
+
+        if not dashboard_filtered:
+            if repo_data_all:
+                st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
+            else:
+                st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
         else:
-            cols = st.columns(min(len(repo_data_all), 4))
-            for idx, item in enumerate(repo_data_all[-4:]):
-                with cols[idx % len(cols)]:
-                    cat_val = item.get('category', '일반')
-                    st.markdown(f"""
-                        <div class="project-card">
-                            <div>
-                                <span style="font-family:var(--font-mono); font-size: 10px; color: var(--accent); background:rgba(0,82,255,0.08); padding:2px 8px; border-radius:6px;">{cat_val}</span>
-                                <span style="font-size: 11px; color: var(--muted-foreground);"> · {item['author']}</span>
-                                <h6 style="margin: 8px 0 4px 0; color: var(--foreground); font-weight: 700;">{item['title']}</h6>
-                                <p style="font-size: 12px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{item['desc']}</p>
-                            </div>
-                            <div style="font-size: 11px; color: var(--muted-foreground); border-top: 1px solid var(--border); padding-top: 8px;">
-                                등록일: {item['date']}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+            current_dash_page = render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash')
+            start_idx = (current_dash_page - 1) * PAGE_SIZE
+            end_idx = start_idx + PAGE_SIZE
+            page_items = dashboard_filtered[start_idx:end_idx]
+
+            table_rows = ""
+            for idx, item in enumerate(page_items):
+                row_no = start_idx + idx + 1
+                issue_cnt = len(item.get('issues', []))
+                table_rows += f"""
+                    <tr>
+                        <td style="width:40px; color:var(--muted-foreground); font-family:var(--font-mono);">{row_no}</td>
+                        <td><span class="board-dept-badge">{item.get('category', '일반')}</span></td>
+                        <td style="font-weight:600;">{item['title']}</td>
+                        <td style="color:var(--muted-foreground);">{item['author']}</td>
+                        <td style="color:var(--muted-foreground); font-family:var(--font-mono); font-size:12px;">{item['date']}</td>
+                        <td style="text-align:center;">{issue_cnt}</td>
+                    </tr>
+                """
+            board_html = f"""
+                <table class="board-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>부서</th>
+                            <th>프로젝트명</th>
+                            <th>담당자</th>
+                            <th>등록일</th>
+                            <th style="text-align:center;">이슈</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {table_rows}
+                    </tbody>
+                </table>
+            """
+            st.markdown(board_html, unsafe_allow_html=True)
+            st.write("")
+            render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash_bottom')
 
     # ---------------- 탭 2: 산출물 커뮤니티 및 저장소 ----------------
     with tab2:
-        st.markdown("""
-            <div class='section-badge'>
-                <span class='dot'></span>
-                <span class='label'>Community Repository</span>
-            </div>
-        """, unsafe_allow_html=True)
         st.markdown("### 산출물 커뮤니티 및 저장소")
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
 
@@ -1006,11 +1024,11 @@ def show_main_page():
         st.write("<br>", unsafe_allow_html=True)
 
         with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
+            my_dept = get_user_dept(current_user_id)
+            st.info(f"업로드 시 부서는 회원가입 시 등록하신 **[{my_dept}]** 으로 자동 지정됩니다.")
             with st.form("upload_form", clear_on_submit=True):
-                proj_name = st.text_input("프로젝트 명")
-                categories_list = st.session_state['app_data'].get('categories', ['전체', '교무처', '학생처', '총무처', '기획처', '단과대학', '기타'])
-                proj_cat = st.selectbox("분야 선택", options=[c for c in categories_list if c != '전체'])
-                proj_desc = st.text_area("산출물 설명")
+                proj_name = st.text_input("프로젝트 명", placeholder="예: 학사행정 챗봇 자동응답 시스템")
+                proj_desc = st.text_area("산출물 설명", placeholder="예: 학생 문의를 자동으로 분류하고 답변하는 AI 챗봇입니다.")
                 uploaded_file = st.file_uploader(
                     "산출물 파일 첨부",
                     type=['zip', 'pdf', 'py', 'csv', 'txt', 'xlsx', 'html']
@@ -1022,10 +1040,12 @@ def show_main_page():
                         with st.spinner("산출물을 저장소에 업로드하는 중입니다..."):
                             existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
                             new_id = max(existing_ids) + 1 if existing_ids else 1
+                            auto_dept = get_user_dept(current_user_id)
+                            ensure_category_exists(auto_dept)
                             new_item = {
                                 "id": new_id,
                                 "title": proj_name,
-                                "category": proj_cat,
+                                "category": auto_dept,
                                 "desc": proj_desc,
                                 "author": st.session_state.get('user_id', '익명'),
                                 "date": now_kst().strftime("%Y-%m-%d %H:%M"),
@@ -1048,7 +1068,7 @@ def show_main_page():
         filtered_repo = get_filtered_repo()
         active_filters = []
         if st.session_state.get(_cat_key, '전체') != '전체':
-            active_filters.append(f"분야: {st.session_state[_cat_key]}")
+            active_filters.append(f"부서: {st.session_state[_cat_key]}")
         if st.session_state.get(_kw_key, '').strip():
             active_filters.append(f"검색어: '{st.session_state[_kw_key]}'")
         filter_desc = f" ({' / '.join(active_filters)} 적용 중)" if active_filters else ""
@@ -1154,7 +1174,7 @@ def show_main_page():
                         for fb in item['feedbacks']:
                             st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb['user']}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
 
-                        fb_input = st.text_input("의견을 남겨주세요", key=f"fb_in_{item['id']}")
+                        fb_input = st.text_input("의견을 남겨주세요", key=f"fb_in_{item['id']}", placeholder="예: 좋은 아이디어네요! 이 부분은 이렇게 개선하면 어떨까요?")
                         if st.button("피드백 등록", key=f"fb_btn_{item['id']}"):
                             if fb_input:
                                 item['feedbacks'].append({"user": st.session_state.get('user_id', '익명'), "time": now_kst().strftime("%Y-%m-%d %H:%M"), "text": fb_input})
@@ -1195,7 +1215,7 @@ def show_main_page():
                                             st.success("이슈가 삭제되었습니다.")
                                             st.rerun()
 
-                        new_issue_title = st.text_input("새 이슈 제목", key=f"issue_in_{item['id']}")
+                        new_issue_title = st.text_input("새 이슈 제목", key=f"issue_in_{item['id']}", placeholder="예: 다운로드 버튼 클릭 시 오류 발생")
                         if st.button("이슈 등록", key=f"issue_btn_{item['id']}"):
                             if new_issue_title.strip():
                                 existing_issue_ids = [i['id'] for i in item_issues] if item_issues else [0]
@@ -1216,7 +1236,7 @@ def show_main_page():
 
                     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------- 탭 3: 계정 관리 및 분야 설정 (관리자 전용) ----------------
+    # ---------------- 탭 3: 계정 관리 및 부서 설정 (관리자 전용) ----------------
     if is_admin:
         with tab3:
             st.markdown("### 시스템 계정 관리")
@@ -1268,27 +1288,27 @@ def show_main_page():
                         st.rerun()
 
             st.markdown("---")
-            st.markdown("### 사이드바 [분야] 필터 항목 구성")
-            st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 시트에서 직접 수정하셔도 되고, 아래에서 추가/삭제하시면 시트에도 자동 반영됩니다.")
+            st.markdown("### 사이드바 [부서] 필터 항목 구성")
+            st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
             current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
-            st.write("현재 등록된 분야 목록:", current_cats)
+            st.write("현재 등록된 부서 목록:", current_cats)
 
-            new_cat_input = st.text_input("추가할 새로운 분야명 입력")
-            if st.button("분야 추가"):
+            new_cat_input = st.text_input("추가할 새로운 부서명 입력", placeholder="예: 산학협력단")
+            if st.button("부서 추가"):
                 if new_cat_input and new_cat_input not in current_cats:
                     st.session_state['app_data']['categories'].append(new_cat_input)
                     save_data(st.session_state['app_data'])
                     if st.session_state.get('last_save_status') != "fail":
-                        st.success(f"분야 [{new_cat_input}]가 추가되었습니다.")
+                        st.success(f"부서 [{new_cat_input}]가 추가되었습니다.")
                         st.rerun()
 
-            rem_cat = st.selectbox("삭제할 분야 선택", options=[c for c in current_cats if c != '전체'])
-            if st.button("선택 분야 삭제"):
+            rem_cat = st.selectbox("삭제할 부서 선택", options=[c for c in current_cats if c != '전체'])
+            if st.button("선택 부서 삭제"):
                 if rem_cat in st.session_state['app_data']['categories']:
                     st.session_state['app_data']['categories'].remove(rem_cat)
                     save_data(st.session_state['app_data'])
                     if st.session_state.get('last_save_status') != "fail":
-                        st.success(f"분야 [{rem_cat}]가 삭제되었습니다.")
+                        st.success(f"부서 [{rem_cat}]가 삭제되었습니다.")
                         st.rerun()
 
             st.markdown("---")
@@ -1327,17 +1347,21 @@ def show_sidebar():
 
         cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
 
-        st.selectbox("분야", options=cat_options, key=_cat_key)
+        st.selectbox("부서", options=cat_options, key=_cat_key)
         st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key=_sort_key)
         st.text_input("검색어", placeholder="프로젝트 검색...", key=_kw_key)
 
         cb1, cb2 = st.columns(2)
         with cb1:
             if st.button("검색", use_container_width=True):
+                st.session_state['repo_page'] = 1
+                st.session_state['dashboard_page'] = 1
                 st.rerun()
         with cb2:
             if st.button("초기화", use_container_width=True):
                 st.session_state['filter_reset_counter'] += 1
+                st.session_state['repo_page'] = 1
+                st.session_state['dashboard_page'] = 1
                 st.rerun()
 
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -1345,7 +1369,7 @@ def show_sidebar():
             <div class='sidebar-brand-card'>
                 <h4 style='color: var(--foreground); margin-bottom: 5px;'>교육혁신처 AI Creative Lab</h4>
                 <p style='font-size: 13px; color: var(--muted-foreground);'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p>
-                <div class='tag'>교육혁신처 AI Creative Lab</div>
+                <div class='tag'>Idea to Impact</div>
             </div>
         """, unsafe_allow_html=True)
 
