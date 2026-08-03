@@ -18,7 +18,7 @@ DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
 
-st.set_page_config(page_title="공공 개발 산출물 저장소", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="교육혁신처 AI Creative Lab 산출물 저장소", layout="wide", initial_sidebar_state="expanded")
 
 
 def now_kst():
@@ -29,8 +29,6 @@ def safe_show_logo(width=None, use_container_width=False):
     """
     로고 이미지 출력을 시도하되, 파일이 없거나 손상되어 있어도
     앱 전체가 MediaFileStorageError로 죽지 않도록 방어하는 함수.
-    실제 원인(파일 누락)은 이 함수로 해결되지 않으며,
-    저장소에 logo-main03_1.png 파일을 올바른 경로/이름으로 커밋해야 근본 해결됩니다.
     """
     try:
         if os.path.exists(LOGO_IMAGE):
@@ -42,7 +40,7 @@ def safe_show_logo(width=None, use_container_width=False):
             st.markdown(
                 "<div style='text-align:center; padding:14px; border:1px dashed var(--border); "
                 "border-radius:12px; color:var(--muted-foreground); font-size:12px;'>"
-                "⚠️ 로고 이미지(logo-main03_1.png)를 찾을 수 없습니다.<br>저장소에 파일을 업로드해 주세요."
+                "로고 이미지(logo-main03_1.png)를 찾을 수 없습니다.<br>저장소에 파일을 업로드해 주세요."
                 "</div>",
                 unsafe_allow_html=True
             )
@@ -50,7 +48,7 @@ def safe_show_logo(width=None, use_container_width=False):
         st.markdown(
             f"<div style='text-align:center; padding:14px; border:1px dashed var(--border); "
             f"border-radius:12px; color:var(--muted-foreground); font-size:12px;'>"
-            f"⚠️ 로고 이미지를 불러오는 중 오류가 발생했습니다: {type(e).__name__}"
+            f"로고 이미지를 불러오는 중 오류가 발생했습니다: {type(e).__name__}"
             f"</div>",
             unsafe_allow_html=True
         )
@@ -75,11 +73,14 @@ def load_data():
             if isinstance(loaded, dict):
                 local_data.update(loaded)
 
-    if 'deleted_ids' not in local_data:
+    if 'deleted_ids' not in local_data or local_data['deleted_ids'] is None:
         local_data['deleted_ids'] = []
+    deleted_ids_set = set(local_data['deleted_ids'])
 
     migrated_users = {}
     for uid, uval in local_data.get('users_db', {}).items():
+        if uid in deleted_ids_set:
+            continue
         if isinstance(uval, str):
             is_admin_account = (uid == "admin")
             migrated_users[uid] = {
@@ -142,6 +143,8 @@ def load_data():
                         merged_users = {}
                         for _, row in users_df.iterrows():
                             uid = str(row['ID'])
+                            if uid in deleted_ids_set:
+                                continue
                             pw = str(row['Password'])
                             dept = str(row['Dept']) if 'Dept' in users_df.columns and pd.notna(row.get('Dept')) else ""
                             manager = str(row['Manager']) if 'Manager' in users_df.columns and pd.notna(row.get('Manager')) else ""
@@ -151,7 +154,7 @@ def load_data():
                                 approved = True
                             merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved}
                         for uid, uinfo in local_users_before_merge.items():
-                            if uid not in merged_users:
+                            if uid not in merged_users and uid not in deleted_ids_set:
                                 merged_users[uid] = uinfo
                         if "admin" not in merged_users:
                             merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
@@ -291,17 +294,22 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in'] and "user_session" in st.query_params:
-    st.session_state['logged_in'] = True
-    st.session_state['user_id'] = st.query_params["user_session"]
-    st.session_state['last_activity'] = now_kst()
+    _session_uid = st.query_params["user_session"]
+    if _session_uid in st.session_state['app_data'].get('users_db', {}):
+        st.session_state['logged_in'] = True
+        st.session_state['user_id'] = _session_uid
+        st.session_state['last_activity'] = now_kst()
+    else:
+        st.query_params.clear()
 
 # ---- 사이드바 필터 상태 기본값 초기화 ----
-if 'filter_category' not in st.session_state:
-    st.session_state['filter_category'] = "전체"
-if 'filter_sort' not in st.session_state:
-    st.session_state['filter_sort'] = "최근 활동순"
-if 'filter_keyword' not in st.session_state:
-    st.session_state['filter_keyword'] = ""
+if 'filter_reset_counter' not in st.session_state:
+    st.session_state['filter_reset_counter'] = 0
+
+_reset_suffix = st.session_state['filter_reset_counter']
+_cat_key = f"filter_category_{_reset_suffix}"
+_sort_key = f"filter_sort_{_reset_suffix}"
+_kw_key = f"filter_keyword_{_reset_suffix}"
 
 
 def get_display_name(user_id):
@@ -346,7 +354,7 @@ def inject_timer_js():
 
 
 # ==========================================
-# 2-1. 디자인 토큰 & 전역 스타일
+# 2-1. 디자인 토큰 & 전역 스타일 (라이트/다크 자동 대응)
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -376,6 +384,28 @@ def inject_design_system():
         --shadow-xl: 0 20px 25px rgba(0,0,0,0.1);
         --shadow-accent: 0 4px 14px rgba(0,82,255,0.25);
         --shadow-accent-lg: 0 8px 24px rgba(0,82,255,0.35);
+    }
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --background: #0B1120;
+            --foreground: #F1F5F9;
+            --muted: #1E293B;
+            --muted-foreground: #94A3B8;
+            --accent: #4D7CFF;
+            --accent-secondary: #7fa4ff;
+            --accent-foreground: #0B1120;
+            --border: #293548;
+            --card: #111827;
+            --ring: #4D7CFF;
+
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.35);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.45);
+            --shadow-xl: 0 20px 25px rgba(0,0,0,0.5);
+            --shadow-accent: 0 4px 14px rgba(77,124,255,0.3);
+            --shadow-accent-lg: 0 8px 24px rgba(77,124,255,0.4);
+        }
     }
 
     html, body, .stApp, [class*="css"] {
@@ -455,7 +485,7 @@ def inject_design_system():
     }
     .metric-card .label { font-size: 12px; color: var(--muted-foreground); font-weight: bold; }
     .metric-card .value { font-size: 28px; font-weight: 800; color: var(--foreground); }
-    .metric-card .sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    .metric-card .sub { font-size: 11px; color: var(--muted-foreground); margin-top: 4px; }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 16px !important;
@@ -503,7 +533,12 @@ def inject_design_system():
         font-size: 12px; color: var(--muted-foreground);
     }
     .repo-title { font-size: 19px; font-weight: 800; color: var(--foreground); margin: 0; }
-    .repo-desc { font-size: 13px; color: #475569; margin: 4px 0 4px 0; }
+    .repo-desc { font-size: 13px; color: var(--muted-foreground); margin: 4px 0 4px 0; }
+
+    .repo-section-label {
+        font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em;
+        color: var(--muted-foreground); text-transform: uppercase; margin: 4px 0 6px 0;
+    }
 
     .project-card {
         background-color: var(--card);
@@ -554,7 +589,7 @@ def inject_design_system():
     }
 
     .sidebar-brand-card {
-        background: linear-gradient(160deg, #F1F5F9, #FFFFFF);
+        background: linear-gradient(160deg, var(--muted), var(--card));
         padding: 22px;
         border-radius: 16px;
         text-align: center;
@@ -563,7 +598,7 @@ def inject_design_system():
     }
     .sidebar-brand-card .tag {
         font-family: var(--font-mono);
-        font-size: 20px;
+        font-size: 18px;
         font-weight: 700;
         padding: 8px 0;
         background: linear-gradient(to right, var(--accent), var(--accent-secondary));
@@ -654,7 +689,7 @@ def show_login_page():
                     </div>
                 </div>
                 <h2 style='text-align: center; margin-top: 4px;'>
-                    공공 개발 산출물 <span class='gradient-text'>저장소</span>
+                    교육혁신처 AI Creative Lab <span class='gradient-text'>산출물 저장소</span>
                 </h2>
                 <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>
                     대학 구성원의 개발 산출물을 안전하게 공유하고 관리하세요
@@ -677,7 +712,7 @@ def show_login_page():
                     if user_info is None or user_info.get("password") != password:
                         st.error("아이디가 존재하지 않거나 비밀번호가 틀렸습니다.")
                     elif not user_info.get("approved", False):
-                        st.warning("⏳ 아직 관리자 승인이 완료되지 않은 계정입니다. 관리자 승인 후 로그인해 주세요.")
+                        st.warning("아직 관리자 승인이 완료되지 않은 계정입니다. 관리자 승인 후 로그인해 주세요.")
                     else:
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
@@ -709,6 +744,8 @@ def show_login_page():
                             "manager": new_manager.strip(),
                             "approved": False
                         }
+                        if new_id in st.session_state['app_data'].get('deleted_ids', []):
+                            st.session_state['app_data']['deleted_ids'].remove(new_id)
                         save_data(st.session_state['app_data'])
                         if st.session_state.get('last_save_status') != "fail":
                             st.success("계정 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.")
@@ -721,9 +758,9 @@ def show_login_page():
 # ==========================================
 def get_filtered_repo():
     repo_data = st.session_state['app_data']['repository']
-    cat_filter = st.session_state.get('filter_category', '전체')
-    keyword = st.session_state.get('filter_keyword', '').strip().lower()
-    sort_option = st.session_state.get('filter_sort', '최근 활동순')
+    cat_filter = st.session_state.get(_cat_key, '전체')
+    keyword = st.session_state.get(_kw_key, '').strip().lower()
+    sort_option = st.session_state.get(_sort_key, '최근 활동순')
 
     filtered = list(repo_data)
 
@@ -766,7 +803,7 @@ def show_main_page():
                 <span class='label'>Live Dashboard</span>
             </div>
         """, unsafe_allow_html=True)
-        st.markdown(f"### 공공 개발 산출물 저장소(공공 GitHub) <span class='gradient-text'>프로젝트 현황</span>", unsafe_allow_html=True)
+        st.markdown(f"### 교육혁신처 AI Creative Lab 산출물 저장소(GitHub) <span class='gradient-text'>프로젝트 현황</span>", unsafe_allow_html=True)
         st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
@@ -823,14 +860,32 @@ def show_main_page():
         with chart_col1:
             with st.container(border=True):
                 st.markdown("##### 프로젝트 활동 현황")
+                st.caption("최근 7일간 실제 등록된 산출물 건수")
                 if repo_data_all:
-                    dates = pd.date_range(end=now_kst().replace(tzinfo=None), periods=7).strftime("%m-%d").tolist()
+                    today = now_kst().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+                    date_range = [today - timedelta(days=i) for i in range(6, -1, -1)]
+
+                    parsed_dates = []
+                    for p in repo_data_all:
+                        try:
+                            d = datetime.strptime(p.get('date', ''), "%Y-%m-%d %H:%M")
+                            parsed_dates.append(d.date())
+                        except Exception:
+                            continue
+
+                    counts = []
+                    for d in date_range:
+                        counts.append(parsed_dates.count(d.date()))
+
                     trend_df = pd.DataFrame({
-                        "일자": dates,
-                        "커밋 수": [0, 0, 0, 0, 0, 0, total_projects * 2]
+                        "일자": [d.strftime("%Y-%m-%d") for d in date_range],
+                        "등록 건수": counts
                     })
-                    fig = px.bar(trend_df, x="일자", y="커밋 수", title="", labels={'일자': '', '커밋 수': ''})
+                    trend_df["일자"] = pd.to_datetime(trend_df["일자"])
+
+                    fig = px.bar(trend_df, x="일자", y="등록 건수", title="", labels={'일자': '', '등록 건수': ''})
                     fig.update_traces(marker_color='#0052FF', marker_line_width=0)
+                    fig.update_xaxes(tickformat="%m-%d")
                     fig.update_layout(
                         height=260, margin=dict(l=20, r=20, t=10, b=20),
                         font=dict(family="Pretendard, sans-serif", color="#0F172A"),
@@ -879,11 +934,11 @@ def show_main_page():
                         <div class="project-card">
                             <div>
                                 <span style="font-family:var(--font-mono); font-size: 10px; color: var(--accent); background:rgba(0,82,255,0.08); padding:2px 8px; border-radius:6px;">{cat_val}</span>
-                                <span style="font-size: 11px; color: #94a3b8;"> · {item['author']}</span>
+                                <span style="font-size: 11px; color: var(--muted-foreground);"> · {item['author']}</span>
                                 <h6 style="margin: 8px 0 4px 0; color: var(--foreground); font-weight: 700;">{item['title']}</h6>
-                                <p style="font-size: 12px; color: #475569; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{item['desc']}</p>
+                                <p style="font-size: 12px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{item['desc']}</p>
                             </div>
-                            <div style="font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 8px;">
+                            <div style="font-size: 11px; color: var(--muted-foreground); border-top: 1px solid var(--border); padding-top: 8px;">
                                 등록일: {item['date']}
                             </div>
                         </div>
@@ -912,7 +967,7 @@ def show_main_page():
 
         st.write("<br>", unsafe_allow_html=True)
 
-        with st.expander("➕ 새로운 산출물(결과물) 업로드 하기", expanded=False):
+        with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
             with st.form("upload_form", clear_on_submit=True):
                 proj_name = st.text_input("프로젝트 명")
                 categories_list = st.session_state['app_data'].get('categories', ['전체', '교무처', '학생처', '총무처', '기획처', '단과대학', '기타'])
@@ -922,28 +977,30 @@ def show_main_page():
                     "산출물 파일 첨부",
                     type=['zip', 'pdf', 'py', 'csv', 'txt', 'xlsx', 'html']
                 )
-                st.caption("ℹ️ 보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. `.html` 파일은 새 창에서 미리보기가 가능합니다.")
+                st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML 파일은 새 창에서 미리보기가 가능합니다.")
 
-                if st.form_submit_button("저장소에 배포하기"):
+                if st.form_submit_button("저장소에 배포하기", use_container_width=True):
                     if proj_name and uploaded_file:
-                        existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
-                        new_id = max(existing_ids) + 1 if existing_ids else 1
-                        new_item = {
-                            "id": new_id,
-                            "title": proj_name,
-                            "category": proj_cat,
-                            "desc": proj_desc,
-                            "author": st.session_state.get('user_id', '익명'),
-                            "date": now_kst().strftime("%Y-%m-%d %H:%M"),
-                            "filename": uploaded_file.name,
-                            "file_data": uploaded_file.read(),
-                            "feedbacks": [],
-                            "issues": []
-                        }
-                        st.session_state['app_data']['repository'].append(new_item)
-                        save_data(st.session_state['app_data'])
+                        with st.spinner("산출물을 저장소에 업로드하는 중입니다..."):
+                            existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
+                            new_id = max(existing_ids) + 1 if existing_ids else 1
+                            new_item = {
+                                "id": new_id,
+                                "title": proj_name,
+                                "category": proj_cat,
+                                "desc": proj_desc,
+                                "author": st.session_state.get('user_id', '익명'),
+                                "date": now_kst().strftime("%Y-%m-%d %H:%M"),
+                                "filename": uploaded_file.name,
+                                "file_data": uploaded_file.read(),
+                                "feedbacks": [],
+                                "issues": []
+                            }
+                            st.session_state['app_data']['repository'].append(new_item)
+                            save_data(st.session_state['app_data'])
                         if st.session_state.get('last_save_status') != "fail":
-                            st.success("성공적으로 공유되었습니다.")
+                            st.success("성공적으로 배포되었습니다.")
+                            st.balloons()
                             st.rerun()
                     else:
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
@@ -952,17 +1009,17 @@ def show_main_page():
 
         filtered_repo = get_filtered_repo()
         active_filters = []
-        if st.session_state.get('filter_category', '전체') != '전체':
-            active_filters.append(f"분야: {st.session_state['filter_category']}")
-        if st.session_state.get('filter_keyword', '').strip():
-            active_filters.append(f"검색어: '{st.session_state['filter_keyword']}'")
+        if st.session_state.get(_cat_key, '전체') != '전체':
+            active_filters.append(f"분야: {st.session_state[_cat_key]}")
+        if st.session_state.get(_kw_key, '').strip():
+            active_filters.append(f"검색어: '{st.session_state[_kw_key]}'")
         filter_desc = f" ({' / '.join(active_filters)} 적용 중)" if active_filters else ""
 
         h1, h2 = st.columns([4, 2])
         with h1:
-            st.markdown(f"#### 📂 커뮤니티 저장소 목록{filter_desc}")
+            st.markdown(f"#### 커뮤니티 저장소 목록{filter_desc}")
         with h2:
-            st.markdown(f"<div style='text-align:right; padding-top:8px; color:var(--muted-foreground); font-size:13px;'>정렬: {st.session_state.get('filter_sort', '최근 활동순')} · 총 {len(filtered_repo)}건</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:right; padding-top:8px; color:var(--muted-foreground); font-size:13px;'>정렬: {st.session_state.get(_sort_key, '최근 활동순')} · 총 {len(filtered_repo)}건</div>", unsafe_allow_html=True)
 
         if not filtered_repo:
             if repo_data_all:
@@ -980,7 +1037,7 @@ def show_main_page():
                         st.markdown(f"""
                             <div class='repo-meta-row'>
                                 <span class='repo-cat-badge'>{item.get('category', '일반')}</span>
-                                <span class='repo-author-badge'>👤 {item['author']} · 🗓️ {item['date']}</span>
+                                <span class='repo-author-badge'>{item['author']} · {item['date']}</span>
                             </div>
                         """, unsafe_allow_html=True)
                         st.markdown(f"<p class='repo-desc'>{item['desc']}</p>", unsafe_allow_html=True)
@@ -991,7 +1048,7 @@ def show_main_page():
                     with action_col:
                         file_ext = item['filename'].split('.')[-1].lower() if item.get('filename') else ''
                         if item.get('file_data'):
-                            st.download_button(label="⬇️ 파일 다운로드", data=item['file_data'], file_name=item['filename'], mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item['filename'], mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
                         else:
                             st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
 
@@ -1000,9 +1057,9 @@ def show_main_page():
                             preview_html = f"""
                                 <a href="data:text/html;base64,{b64}" target="_blank"
                                    style="display:block; text-align:center; padding:8px 0; margin-top:6px;
-                                          background:#0F172A; color:white; border-radius:10px;
+                                          background:var(--foreground); color:var(--background); border-radius:10px;
                                           font-size:14px; text-decoration:none; font-weight:500;">
-                                   🖥️ 새 창에서 미리보기
+                                   새 창에서 미리보기
                                 </a>
                             """
                             st.markdown(preview_html, unsafe_allow_html=True)
@@ -1011,10 +1068,10 @@ def show_main_page():
                         m_col1, m_col2, m_spacer = st.columns([1.3, 1.3, 3.4])
                         with m_col1:
                             edit_toggle_key = f"edit_toggle_{item['id']}"
-                            if st.button("✏️ 내용 수정", key=f"edit_open_{item['id']}", use_container_width=True):
+                            if st.button("내용 수정", key=f"edit_open_{item['id']}", use_container_width=True):
                                 st.session_state[edit_toggle_key] = not st.session_state.get(edit_toggle_key, False)
                         with m_col2:
-                            if st.button("🗑️ 산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
+                            if st.button("산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
                                 st.session_state['app_data']['repository'] = [
                                     p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
                                 ]
@@ -1042,22 +1099,22 @@ def show_main_page():
 
                     if item.get('file_data'):
                         if file_ext in ['py', 'txt', 'csv']:
-                            with st.expander(f"📄 파일 미리보기 ({item['filename']})"):
+                            with st.expander(f"파일 미리보기 ({item['filename']})"):
                                 try:
                                     st.code(item['file_data'].decode('utf-8'), language='python' if file_ext == 'py' else 'text')
                                 except Exception:
                                     st.error("텍스트로 미리볼 수 없는 인코딩입니다.")
                         elif file_ext == 'html':
-                            with st.expander(f"📄 파일 미리보기 ({item['filename']})"):
+                            with st.expander(f"파일 미리보기 ({item['filename']})"):
                                 st.caption("아래는 페이지 내 임베드 미리보기입니다. 전체 화면으로 보려면 위쪽의 '새 창에서 미리보기' 버튼을 이용해 주세요.")
                                 try:
                                     components.html(item['file_data'].decode('utf-8'), height=400, scrolling=True)
                                 except Exception:
                                     st.error("HTML 미리보기를 렌더링할 수 없습니다.")
 
-                    with st.expander(f"💬 피드백 및 토론 ({len(item['feedbacks'])}건)"):
+                    with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
                         for fb in item['feedbacks']:
-                            st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb['user']}</b> <span style='color:#94a3b8; font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb['user']}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
 
                         fb_input = st.text_input("의견을 남겨주세요", key=f"fb_in_{item['id']}")
                         if st.button("피드백 등록", key=f"fb_btn_{item['id']}"):
@@ -1070,7 +1127,7 @@ def show_main_page():
                     item_issues = item.get('issues', [])
                     open_cnt = len([i for i in item_issues if i.get('status') == '진행중'])
                     done_cnt = len([i for i in item_issues if i.get('status') == '완료'])
-                    with st.expander(f"🐞 이슈 ({len(item_issues)}건 · 진행중 {open_cnt} / 완료 {done_cnt})"):
+                    with st.expander(f"이슈 ({len(item_issues)}건 · 진행중 {open_cnt} / 완료 {done_cnt})"):
                         if not item_issues:
                             st.caption("등록된 이슈가 없습니다.")
                         for iss in item_issues:
@@ -1080,7 +1137,7 @@ def show_main_page():
                                 st.markdown(
                                     f"<span class='{badge_class}'>{iss.get('status')}</span> "
                                     f"<b>{iss.get('title')}</b> "
-                                    f"<span style='color:#94a3b8; font-size:11px;'>· {iss.get('author')} · {iss.get('date')}</span>",
+                                    f"<span style='color:var(--muted-foreground); font-size:11px;'>· {iss.get('author')} · {iss.get('date')}</span>",
                                     unsafe_allow_html=True
                                 )
                             with ic2:
@@ -1134,7 +1191,7 @@ def show_main_page():
                     "부서명": uinfo.get("dept", ""),
                     "담당자명": uinfo.get("manager", ""),
                     "비밀번호": uinfo.get("password", ""),
-                    "승인 여부": "✅ 승인됨" if uinfo.get("approved", False) else "⏳ 대기중"
+                    "승인 여부": "승인됨" if uinfo.get("approved", False) else "대기중"
                 })
             users_df = pd.DataFrame(users_rows)
             st.dataframe(users_df, use_container_width=True, hide_index=True)
@@ -1163,6 +1220,10 @@ def show_main_page():
             if st.button("선택 계정 삭제"):
                 if target_user in st.session_state['app_data']['users_db']:
                     del st.session_state['app_data']['users_db'][target_user]
+                    if 'deleted_ids' not in st.session_state['app_data']:
+                        st.session_state['app_data']['deleted_ids'] = []
+                    if target_user not in st.session_state['app_data']['deleted_ids']:
+                        st.session_state['app_data']['deleted_ids'].append(target_user)
                     save_data(st.session_state['app_data'])
                     if st.session_state.get('last_save_status') != "fail":
                         st.success(f"사용자 [{target_user}] 계정이 삭제되었습니다.")
@@ -1193,21 +1254,7 @@ def show_main_page():
                         st.rerun()
 
             st.markdown("---")
-            st.markdown("### ⚙️ 앱 절전(Sleep) 모드 관련 안내")
-            st.info(
-                "Streamlit Community Cloud(무료 플랜)는 일정 시간 접속이 없으면 앱을 자동으로 절전 상태로 전환하는 "
-                "플랫폼 정책을 가지고 있습니다. 이는 앱 코드 내부에서 해결할 수 없는 부분이며, 아래와 같은 방법을 "
-                "외부에서 별도로 설정해야 합니다.\n\n"
-                "1. UptimeRobot, cron-job.org 같은 무료 외부 모니터링 서비스에 이 앱의 URL을 등록하고, "
-                "5~10분 간격으로 자동 접속(ping)하도록 설정합니다.\n"
-                "2. 지속적인 무중단 운영이 꼭 필요하다면, Streamlit의 유료 플랜이나 별도의 상시 구동 호스팅(예: 자체 서버, "
-                "Render, Railway 등)으로 이전을 검토해 주세요.\n\n"
-                "※ 이 안내는 Streamlit Cloud의 일반적으로 알려진 정책에 기반한 것으로, 최신 정확한 정책은 "
-                "Streamlit 공식 문서에서 다시 확인해 주시기 바랍니다."
-            )
-
-            st.markdown("---")
-            st.markdown("### 🔍 Google Sheets 연동 진단 로그")
+            st.markdown("### Google Sheets 연동 진단 로그")
             st.caption(f"현재 db_mode: **{st.session_state.get('db_mode', '알 수 없음')}**")
             debug_log = st.session_state.get('gsheets_debug_log', [])
             if debug_log:
@@ -1237,16 +1284,14 @@ def show_sidebar():
         col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
         with col_side2:
             safe_show_logo(use_container_width=True)
-        st.markdown("<h3 style='text-align:center;'>AI 서정 실험실</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align:center;'>교육혁신처 AI Creative Lab</h3>", unsafe_allow_html=True)
         st.markdown("---")
 
         cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
-        if st.session_state['filter_category'] not in cat_options:
-            st.session_state['filter_category'] = "전체"
 
-        st.selectbox("분야", options=cat_options, key="filter_category")
-        st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key="filter_sort")
-        st.text_input("검색어", placeholder="프로젝트 검색...", key="filter_keyword")
+        st.selectbox("분야", options=cat_options, key=_cat_key)
+        st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key=_sort_key)
+        st.text_input("검색어", placeholder="프로젝트 검색...", key=_kw_key)
 
         cb1, cb2 = st.columns(2)
         with cb1:
@@ -1254,17 +1299,15 @@ def show_sidebar():
                 st.rerun()
         with cb2:
             if st.button("초기화", use_container_width=True):
-                st.session_state['filter_category'] = "전체"
-                st.session_state['filter_sort'] = "최근 활동순"
-                st.session_state['filter_keyword'] = ""
+                st.session_state['filter_reset_counter'] += 1
                 st.rerun()
 
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("""
             <div class='sidebar-brand-card'>
-                <h4 style='color: #0f172a; margin-bottom: 5px;'>AI 서정 실험실</h4>
-                <p style='font-size: 13px; color: #64748b;'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p>
-                <div class='tag'>Data & AI</div>
+                <h4 style='color: var(--foreground); margin-bottom: 5px;'>교육혁신처 AI Creative Lab</h4>
+                <p style='font-size: 13px; color: var(--muted-foreground);'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p>
+                <div class='tag'>교육혁신처 AI Creative Lab</div>
             </div>
         """, unsafe_allow_html=True)
 
