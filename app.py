@@ -426,7 +426,6 @@ def inject_timer_js():
 
 # ==========================================
 # 2-1. 디자인 토큰 & 전역 스타일
-#      (사이드바와 메인 영역이 하나의 배경을 공유하도록 수정)
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -462,9 +461,6 @@ def inject_design_system():
         font-family: var(--font-body) !important;
     }
 
-    /* 배경 애니메이션은 최상위 html에 고정 배치(fixed)하여
-       사이드바와 메인 콘텐츠 영역이 서로 다른 스크롤 컨테이너여도
-       동일한 하나의 배경을 이어서 공유하도록 처리 */
     html {
         background-color: var(--background) !important;
     }
@@ -487,7 +483,6 @@ def inject_design_system():
         100% { background-position: 0% 0%, 100% 0%, 50% 100%; }
     }
 
-    /* .stApp과 사이드바 둘 다 투명하게 두어 html의 배경이 그대로 관통되어 보이게 함 */
     .stApp {
         color: var(--foreground);
         background-color: transparent !important;
@@ -822,7 +817,6 @@ def show_login_page():
 
 # ==========================================
 # 4. 사이드바 필터가 반영된 저장소 데이터 조회 함수
-#    (탭1, 탭2 공통으로 사용)
 # ==========================================
 def get_filtered_repo():
     repo_data = st.session_state['app_data']['repository']
@@ -877,6 +871,39 @@ def render_pagination(total_items, page_state_key, key_prefix):
             st.rerun()
 
     return current_page
+
+
+def render_board_table(page_items, start_idx):
+    """
+    최근 활동 프로젝트 게시판형 목록을 렌더링한다.
+    반드시 줄바꿈/들여쓰기 없는 한 줄짜리 HTML 문자열로 만들어야
+    Streamlit의 마크다운 파서가 이를 '들여쓰기된 코드 블록'으로
+    오인해서 태그를 텍스트 그대로 출력해버리는 문제를 피할 수 있다.
+    """
+    table_rows = ""
+    for idx, item in enumerate(page_items):
+        row_no = start_idx + idx + 1
+        issue_cnt = len(item.get('issues', []))
+        table_rows += (
+            "<tr>"
+            f"<td style='width:40px; color:var(--muted-foreground); font-family:var(--font-mono);'>{row_no}</td>"
+            f"<td><span class='board-dept-badge'>{item.get('category', '일반')}</span></td>"
+            f"<td style='font-weight:600;'>{item['title']}</td>"
+            f"<td style='color:var(--muted-foreground);'>{item['author']}</td>"
+            f"<td style='color:var(--muted-foreground); font-family:var(--font-mono); font-size:12px;'>{item['date']}</td>"
+            f"<td style='text-align:center;'>{issue_cnt}</td>"
+            "</tr>"
+        )
+    board_html = (
+        "<table class='board-table'>"
+        "<thead><tr>"
+        "<th>#</th><th>부서</th><th>프로젝트명</th><th>담당자</th><th>등록일</th>"
+        "<th style='text-align:center;'>이슈</th>"
+        "</tr></thead>"
+        f"<tbody>{table_rows}</tbody>"
+        "</table>"
+    )
+    st.markdown(board_html, unsafe_allow_html=True)
 
 
 # ==========================================
@@ -1023,38 +1050,8 @@ def show_main_page():
             end_idx = start_idx + PAGE_SIZE
             page_items = dashboard_filtered[start_idx:end_idx]
 
-            table_rows = ""
-            for idx, item in enumerate(page_items):
-                row_no = start_idx + idx + 1
-                issue_cnt = len(item.get('issues', []))
-                table_rows += f"""
-                    <tr>
-                        <td style="width:40px; color:var(--muted-foreground); font-family:var(--font-mono);">{row_no}</td>
-                        <td><span class="board-dept-badge">{item.get('category', '일반')}</span></td>
-                        <td style="font-weight:600;">{item['title']}</td>
-                        <td style="color:var(--muted-foreground);">{item['author']}</td>
-                        <td style="color:var(--muted-foreground); font-family:var(--font-mono); font-size:12px;">{item['date']}</td>
-                        <td style="text-align:center;">{issue_cnt}</td>
-                    </tr>
-                """
-            board_html = f"""
-                <table class="board-table">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>부서</th>
-                            <th>프로젝트명</th>
-                            <th>담당자</th>
-                            <th>등록일</th>
-                            <th style="text-align:center;">이슈</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {table_rows}
-                    </tbody>
-                </table>
-            """
-            st.markdown(board_html, unsafe_allow_html=True)
+            render_board_table(page_items, start_idx)
+
             st.write("")
             render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash_bottom')
 
