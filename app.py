@@ -58,7 +58,7 @@ def safe_show_logo(width=None, use_container_width=False):
 def load_data():
     local_data = {
         "users_db": {
-            "admin": {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+            "admin": {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
         },
         "repository": [],
         "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"],
@@ -85,15 +85,19 @@ def load_data():
                 "password": uval,
                 "dept": "시스템관리자" if is_admin_account else "",
                 "manager": "관리자" if is_admin_account else "",
-                "approved": True if is_admin_account else False
+                "approved": True if is_admin_account else False,
+                "role": "admin" if is_admin_account else "user"
             }
         elif isinstance(uval, dict):
             uval.setdefault("dept", "")
             uval.setdefault("manager", "")
             uval.setdefault("approved", uid == "admin")
+            uval.setdefault("role", "admin" if uid == "admin" else "user")
+            if uid == "admin":
+                uval["role"] = "admin"
             migrated_users[uid] = uval
     if "admin" not in migrated_users:
-        migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+        migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
     local_data['users_db'] = migrated_users
 
     for item in local_data.get('repository', []):
@@ -147,9 +151,12 @@ def load_data():
                             manager = str(row['Manager']) if 'Manager' in users_df.columns and pd.notna(row.get('Manager')) else ""
                             approved_raw = row.get('Approved') if 'Approved' in users_df.columns else False
                             approved = str(approved_raw).strip().upper() in ("TRUE", "1", "예", "Y")
+                            role_raw = str(row.get('Role')).strip().lower() if 'Role' in users_df.columns and pd.notna(row.get('Role')) else "user"
+                            role = "admin" if role_raw == "admin" else "user"
                             if uid == "admin":
                                 approved = True
-                            merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved}
+                                role = "admin"
+                            merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved, "role": role}
                         for uid, uinfo in local_users_before_merge.items():
                             if uid not in merged_users and uid not in deleted_ids_set:
                                 merged_users[uid] = uinfo
@@ -157,13 +164,13 @@ def load_data():
                             if uid in deleted_ids_set:
                                 del merged_users[uid]
                         if "admin" not in merged_users:
-                            merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+                            merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
                         local_data['users_db'] = merged_users
                         _log(f"Users 병합 완료: 총 {len(merged_users)}건")
                     else:
                         _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
                         if not users_df.empty:
-                            _log(f"⚠️ 실제 컬럼명: {list(users_df.columns)} (필요: ID, Password, Dept, Manager, Approved)", "warn")
+                            _log(f"⚠️ 실제 컬럼명: {list(users_df.columns)} (필요: ID, Password, Dept, Manager, Approved, Role)", "warn")
                 except Exception as e_users:
                     _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
 
@@ -252,7 +259,7 @@ def save_data(data):
             try:
                 latest_users_df = conn.read(worksheet="Users", ttl=0)
             except Exception:
-                latest_users_df = pd.DataFrame(columns=["ID", "Password", "Dept", "Manager", "Approved"])
+                latest_users_df = pd.DataFrame(columns=["ID", "Password", "Dept", "Manager", "Approved", "Role"])
 
             latest_users = {}
             if not latest_users_df.empty and {'ID', 'Password'}.issubset(set(latest_users_df.columns)):
@@ -261,11 +268,13 @@ def save_data(data):
                     if uid in deleted_ids_set:
                         continue
                     approved_raw = row.get('Approved') if 'Approved' in latest_users_df.columns else False
+                    role_raw = str(row.get('Role')).strip().lower() if 'Role' in latest_users_df.columns and pd.notna(row.get('Role')) else "user"
                     latest_users[uid] = {
                         "password": str(row['Password']),
                         "dept": str(row['Dept']) if 'Dept' in latest_users_df.columns and pd.notna(row.get('Dept')) else "",
                         "manager": str(row['Manager']) if 'Manager' in latest_users_df.columns and pd.notna(row.get('Manager')) else "",
-                        "approved": (str(approved_raw).strip().upper() in ("TRUE", "1", "예", "Y")) or uid == "admin"
+                        "approved": (str(approved_raw).strip().upper() in ("TRUE", "1", "예", "Y")) or uid == "admin",
+                        "role": "admin" if (role_raw == "admin" or uid == "admin") else "user"
                     }
 
             final_users = dict(latest_users)
@@ -277,7 +286,9 @@ def save_data(data):
                 if uid in deleted_ids_set:
                     del final_users[uid]
             if "admin" not in final_users:
-                final_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+                final_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
+            else:
+                final_users["admin"]["role"] = "admin"
 
             data['users_db'] = final_users
 
@@ -288,9 +299,10 @@ def save_data(data):
                     "Password": uinfo.get("password", ""),
                     "Dept": uinfo.get("dept", ""),
                     "Manager": uinfo.get("manager", ""),
-                    "Approved": bool(uinfo.get("approved", False))
+                    "Approved": bool(uinfo.get("approved", False)),
+                    "Role": uinfo.get("role", "user")
                 })
-            users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved"])
+            users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved", "Role"])
             conn.update(worksheet="Users", data=users_df)
 
             if data['repository']:
@@ -372,6 +384,14 @@ def get_user_dept(user_id):
     return dept if dept else "기타"
 
 
+def is_user_admin(user_id):
+    if user_id == 'admin':
+        return True
+    users_db = st.session_state['app_data'].get('users_db', {})
+    uinfo = users_db.get(user_id, {})
+    return uinfo.get('role') == 'admin'
+
+
 def ensure_category_exists(dept_name):
     cats = st.session_state['app_data'].get('categories', [])
     if dept_name and dept_name not in cats:
@@ -406,6 +426,7 @@ def inject_timer_js():
 
 # ==========================================
 # 2-1. 디자인 토큰 & 전역 스타일
+#      (사이드바와 메인 영역이 하나의 배경을 공유하도록 수정)
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -441,9 +462,17 @@ def inject_design_system():
         font-family: var(--font-body) !important;
     }
 
-    .stApp {
-        color: var(--foreground);
+    /* 배경 애니메이션은 최상위 html에 고정 배치(fixed)하여
+       사이드바와 메인 콘텐츠 영역이 서로 다른 스크롤 컨테이너여도
+       동일한 하나의 배경을 이어서 공유하도록 처리 */
+    html {
         background-color: var(--background) !important;
+    }
+    html::before {
+        content: "";
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        z-index: -1;
         background-image:
             radial-gradient(circle at 15% 20%, rgba(0,82,255,0.07) 0%, transparent 45%),
             radial-gradient(circle at 85% 30%, rgba(77,124,255,0.07) 0%, transparent 45%),
@@ -458,8 +487,19 @@ def inject_design_system():
         100% { background-position: 0% 0%, 100% 0%, 50% 100%; }
     }
 
+    /* .stApp과 사이드바 둘 다 투명하게 두어 html의 배경이 그대로 관통되어 보이게 함 */
+    .stApp {
+        color: var(--foreground);
+        background-color: transparent !important;
+    }
     [data-testid="stSidebar"] {
-        background-color: var(--background) !important;
+        background-color: transparent !important;
+    }
+    [data-testid="stSidebar"] > div {
+        background-color: transparent !important;
+    }
+    [data-testid="stHeader"] {
+        background-color: transparent !important;
     }
 
     h1, h2, h3 {
@@ -509,6 +549,7 @@ def inject_design_system():
         border-radius: 16px !important;
         box-shadow: var(--shadow-md);
         transition: box-shadow 0.3s ease-out;
+        background-color: var(--card) !important;
     }
     div[data-testid="stVerticalBlockBorderWrapper"]:hover {
         box-shadow: var(--shadow-lg);
@@ -612,6 +653,16 @@ def inject_design_system():
     .issue-badge-done {
         display: inline-block; font-size: 11px; font-family: var(--font-mono);
         background: rgba(22,163,74,0.1); color: #15803D; border: 1px solid rgba(22,163,74,0.3);
+        padding: 2px 10px; border-radius: 999px;
+    }
+    .role-badge-admin {
+        display: inline-block; font-size: 11px; font-family: var(--font-mono);
+        background: rgba(0,82,255,0.1); color: var(--accent); border: 1px solid rgba(0,82,255,0.3);
+        padding: 2px 10px; border-radius: 999px;
+    }
+    .role-badge-user {
+        display: inline-block; font-size: 11px; font-family: var(--font-mono);
+        background: var(--muted); color: var(--muted-foreground); border: 1px solid var(--border);
         padding: 2px 10px; border-radius: 999px;
     }
 
@@ -758,7 +809,8 @@ def show_login_page():
                             "password": new_pw,
                             "dept": new_dept.strip(),
                             "manager": new_manager.strip(),
-                            "approved": False
+                            "approved": False,
+                            "role": "user"
                         }
                         if new_id in st.session_state['app_data'].get('deleted_ids', []):
                             st.session_state['app_data']['deleted_ids'].remove(new_id)
@@ -876,7 +928,7 @@ def show_main_page():
 
     total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
 
-    is_admin = (current_user_id == 'admin')
+    is_admin = is_user_admin(current_user_id)
 
     if is_admin:
         tab1, tab2, tab3 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소", "계정 관리"])
@@ -1101,7 +1153,7 @@ def show_main_page():
                         st.markdown(f"<p class='repo-desc'>{item['desc']}</p>", unsafe_allow_html=True)
 
                     current_user = st.session_state.get('user_id')
-                    can_manage = (current_user == item['author'] or current_user == 'admin')
+                    can_manage = (current_user == item['author'] or is_user_admin(current_user))
 
                     with action_col:
                         file_ext = item['filename'].split('.')[-1].lower() if item.get('filename') else ''
@@ -1207,7 +1259,7 @@ def show_main_page():
                                         if st.session_state.get('last_save_status') != "fail":
                                             st.rerun()
                             with ic3:
-                                if current_user == 'admin':
+                                if is_user_admin(current_user):
                                     if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", use_container_width=True):
                                         item['issues'] = [i for i in item_issues if i['id'] != iss['id']]
                                         save_data(st.session_state['app_data'])
@@ -1249,6 +1301,7 @@ def show_main_page():
                     "부서명": uinfo.get("dept", ""),
                     "담당자명": uinfo.get("manager", ""),
                     "비밀번호": uinfo.get("password", ""),
+                    "권한": "관리자" if uinfo.get("role") == "admin" else "일반",
                     "승인 여부": "승인됨" if uinfo.get("approved", False) else "대기중"
                 })
             users_df = pd.DataFrame(users_rows)
@@ -1273,6 +1326,45 @@ def show_main_page():
                                     st.success(f"[{uid}] 계정이 승인되었습니다.")
                                     st.rerun()
 
+            st.markdown("---")
+            st.markdown("#### 관리자 권한 부여 / 해제")
+            st.caption("관리자 권한을 부여받은 계정은 모든 산출물을 수정·삭제하고, 다른 사용자를 승인/삭제하며, 부서 목록을 관리할 수 있게 됩니다. 신중하게 부여해 주세요.")
+
+            non_root_users = [uid for uid in users_db.keys() if uid != 'admin']
+            if not non_root_users:
+                st.info("권한을 부여할 다른 계정이 없습니다.")
+            else:
+                for uid in non_root_users:
+                    uinfo = users_db[uid]
+                    current_role = uinfo.get("role", "user")
+                    with st.container(border=True):
+                        rc1, rc2, rc3 = st.columns([3, 1.3, 1.3])
+                        with rc1:
+                            role_badge_class = "role-badge-admin" if current_role == "admin" else "role-badge-user"
+                            role_label = "관리자" if current_role == "admin" else "일반 사용자"
+                            st.markdown(
+                                f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')}) "
+                                f"<span class='{role_badge_class}'>{role_label}</span>",
+                                unsafe_allow_html=True
+                            )
+                        with rc2:
+                            if current_role != "admin":
+                                if st.button("관리자로 지정", key=f"grant_admin_{uid}", use_container_width=True):
+                                    st.session_state['app_data']['users_db'][uid]["role"] = "admin"
+                                    save_data(st.session_state['app_data'])
+                                    if st.session_state.get('last_save_status') != "fail":
+                                        st.success(f"[{uid}] 계정에 관리자 권한이 부여되었습니다.")
+                                        st.rerun()
+                        with rc3:
+                            if current_role == "admin":
+                                if st.button("권한 해제", key=f"revoke_admin_{uid}", use_container_width=True):
+                                    st.session_state['app_data']['users_db'][uid]["role"] = "user"
+                                    save_data(st.session_state['app_data'])
+                                    if st.session_state.get('last_save_status') != "fail":
+                                        st.success(f"[{uid}] 계정의 관리자 권한이 해제되었습니다.")
+                                        st.rerun()
+
+            st.markdown("---")
             st.markdown("#### 사용자 계정 삭제")
             target_user = st.selectbox("삭제할 사용자 선택", options=[u for u in users_db.keys() if u != 'admin'])
             if st.button("선택 계정 삭제"):
