@@ -95,6 +95,7 @@ def load_data():
             uval.setdefault("role", "admin" if uid == "admin" else "user")
             if uid == "admin":
                 uval["role"] = "admin"
+                uval["approved"] = True
             migrated_users[uid] = uval
     if "admin" not in migrated_users:
         migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
@@ -108,6 +109,10 @@ def load_data():
     if 'timeline_log' not in local_data or local_data['timeline_log'] is None:
         local_data['timeline_log'] = []
 
+    # 로컬 pickle 파일에 저장된 승인 상태(local_users_before_merge)는
+    # '가장 최근에 이 서버에서 확정된 상태'이므로, 구글 시트 값과 병합할 때
+    # 로컬 값이 더 신뢰도가 높은 것으로 취급한다.
+    # (시트 쓰기가 일시적으로 실패해도, 로컬에는 최신 승인 상태가 남아있기 때문)
     local_users_before_merge = dict(local_data['users_db'])
     local_repo_before_merge = list(local_data['repository'])
     local_categories_before_merge = list(local_data.get('categories', []))
@@ -161,16 +166,33 @@ def load_data():
                                 approved = True
                                 role = "admin"
                             merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved, "role": role}
+
+                        # 핵심 수정: 시트 값과 로컬(pickle) 값이 둘 다 있는 계정은
+                        # '승인(approved)이 True인 쪽'을 우선한다.
+                        # 시트 쓰기가 일시적으로 실패해서 시트가 예전 상태(미승인)로 남아있어도,
+                        # 로컬에 이미 승인 처리가 반영되어 있다면 그 값을 유지시켜
+                        # "승인했는데 다시 대기 상태로 풀리는" 문제를 방지한다.
                         for uid, uinfo in local_users_before_merge.items():
-                            if uid not in merged_users and uid not in deleted_ids_set:
+                            if uid in deleted_ids_set:
+                                continue
+                            if uid not in merged_users:
                                 merged_users[uid] = uinfo
+                            else:
+                                if uinfo.get("approved") and not merged_users[uid].get("approved"):
+                                    merged_users[uid]["approved"] = True
+                                if uinfo.get("role") == "admin":
+                                    merged_users[uid]["role"] = "admin"
+
                         for uid in list(merged_users.keys()):
                             if uid in deleted_ids_set:
                                 del merged_users[uid]
                         if "admin" not in merged_users:
                             merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
+                        else:
+                            merged_users["admin"]["approved"] = True
+                            merged_users["admin"]["role"] = "admin"
                         local_data['users_db'] = merged_users
-                        _log(f"Users 병합 완료: 총 {len(merged_users)}건")
+                        _log(f"Users 병합 완료: 총 {len(merged_users)}건 (로컬 승인 상태 우선 적용)")
                     else:
                         _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
                         if not users_df.empty:
@@ -205,7 +227,7 @@ def load_data():
                             except Exception:
                                 s_item['issues'] = []
 
-                            if pd.isna(s_item.get('completed_at')):
+                            if pd.isna(s_item.get('completed_at')) or str(s_item.get('completed_at')) in ('', 'None', 'nan'):
                                 s_item['completed_at'] = None
 
                             matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
@@ -244,6 +266,16 @@ def load_data():
                     _log(f"❌ Categories 시트 읽기 실패: {_fmt_err(e_cat, 'categories_read')}", "error")
                     _log("⚠️ Categories 시트가 아직 없다면, 구글 스프레드시트에 'Categories'라는 이름의 탭을 만들고 A1 셀에 'category' 헤더를 입력해주세요.", "warn")
                     local_data['categories'] = local_categories_before_merge
+
+                try:
+                    timeline_df = conn.read(worksheet="TimelineLog", ttl=0)
+                    if not timeline_df.empty:
+                        local_data['timeline_log'] = timeline_df.to_dict('records')
+                        _log(f"TimelineLog 시트 읽기 성공: {len(timeline_df)}행")
+                    else:
+                        _log("ℹ️ TimelineLog 시트가 비어 있습니다.")
+                except Exception as e_tl:
+                    _log(f"ℹ️ TimelineLog 시트를 찾을 수 없습니다(선택 기능이므로 무시됩니다). {_fmt_err(e_tl, 'timeline_read')}", "warn")
         else:
             _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
     except Exception as e:
@@ -257,6 +289,7 @@ def save_data(data):
         pickle.dump(data, f)
 
     if st.session_state.get('db_mode') == "Google Sheets":
+        core_save_failed = False
         try:
             from streamlit_gsheets import GSheetsConnection
             conn = st.connection("gsheets", type=GSheetsConnection)
@@ -284,6 +317,8 @@ def save_data(data):
                         "role": "admin" if (role_raw == "admin" or uid == "admin") else "user"
                     }
 
+            # data['users_db'] (현재 세션의 최신 상태, 승인 처리 등이 이미 반영됨)가
+            # 시트에서 새로 읽은 값보다 항상 우선한다.
             final_users = dict(latest_users)
             for uid, uinfo in data['users_db'].items():
                 if uid in deleted_ids_set:
@@ -296,6 +331,7 @@ def save_data(data):
                 final_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
             else:
                 final_users["admin"]["role"] = "admin"
+                final_users["admin"]["approved"] = True
 
             data['users_db'] = final_users
 
@@ -310,7 +346,12 @@ def save_data(data):
                     "Role": uinfo.get("role", "user")
                 })
             users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved", "Role"])
-            conn.update(worksheet="Users", data=users_df)
+
+            try:
+                conn.update(worksheet="Users", data=users_df)
+            except Exception as e_u:
+                core_save_failed = True
+                raise e_u
 
             if data['repository']:
                 repo_df = pd.DataFrame(data['repository'])
@@ -319,21 +360,42 @@ def save_data(data):
                 repo_df['feedbacks'] = repo_df['feedbacks'].apply(lambda x: str(x))
                 if 'issues' in repo_df.columns:
                     repo_df['issues'] = repo_df['issues'].apply(lambda x: str(x))
-                conn.update(worksheet="Repository", data=repo_df)
+                if 'completed_at' not in repo_df.columns:
+                    repo_df['completed_at'] = None
+                try:
+                    conn.update(worksheet="Repository", data=repo_df)
+                except Exception as e_r:
+                    core_save_failed = True
+                    raise e_r
             else:
                 empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks', 'issues', 'completed_at'])
-                conn.update(worksheet="Repository", data=empty_df)
+                try:
+                    conn.update(worksheet="Repository", data=empty_df)
+                except Exception as e_r2:
+                    core_save_failed = True
+                    raise e_r2
 
             cat_list = data.get('categories', [])
             cat_df = pd.DataFrame({"category": cat_list})
-            conn.update(worksheet="Categories", data=cat_df)
+            try:
+                conn.update(worksheet="Categories", data=cat_df)
+            except Exception as e_c:
+                core_save_failed = True
+                raise e_c
 
-            if data.get('timeline_log'):
-                timeline_df = pd.DataFrame(data['timeline_log'])
+            # TimelineLog는 부가(선택) 기능이다.
+            # 이 시트가 아직 만들어져 있지 않아도 위의 핵심 데이터(Users/Repository/Categories)
+            # 저장에는 절대 영향을 주지 않도록 별도의 try/except로 완전히 분리한다.
+            try:
+                if data.get('timeline_log'):
+                    timeline_df = pd.DataFrame(data['timeline_log'])
+                else:
+                    timeline_df = pd.DataFrame(columns=['id', 'title', 'category', 'author', 'started_at', 'completed_at', 'duration_hours'])
                 conn.update(worksheet="TimelineLog", data=timeline_df)
-            else:
-                empty_timeline_df = pd.DataFrame(columns=['id', 'title', 'category', 'author', 'started_at', 'completed_at', 'duration_hours'])
-                conn.update(worksheet="TimelineLog", data=empty_timeline_df)
+            except Exception as e_tl:
+                st.session_state.setdefault('gsheets_debug_log', []).append(
+                    ("warn", f"ℹ️ TimelineLog 시트 저장을 건너뛰었습니다(시트 탭이 없어도 정상 동작에는 영향 없음): [{type(e_tl).__name__}] {e_tl}")
+                )
 
             st.session_state['last_save_status'] = "success"
         except Exception as e:
@@ -341,8 +403,11 @@ def save_data(data):
             st.session_state.setdefault('gsheets_full_traceback', []).append(("save_data", full_tb))
             err_txt = f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'}"
             st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
-            st.session_state['last_save_status'] = "fail"
-            st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
+            if core_save_failed:
+                st.session_state['last_save_status'] = "fail"
+                st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
+            else:
+                st.session_state['last_save_status'] = "success"
     else:
         st.session_state['last_save_status'] = "local_only"
 
@@ -355,7 +420,8 @@ if 'logged_in' not in st.session_state:
 
 if not st.session_state['logged_in'] and "user_session" in st.query_params:
     _session_uid = st.query_params["user_session"]
-    if _session_uid in st.session_state['app_data'].get('users_db', {}):
+    _uinfo_check = st.session_state['app_data'].get('users_db', {}).get(_session_uid)
+    if _uinfo_check is not None and _uinfo_check.get('approved', False):
         st.session_state['logged_in'] = True
         st.session_state['user_id'] = _session_uid
         st.session_state['last_activity'] = now_kst()
@@ -381,9 +447,7 @@ def get_display_name(user_id):
     uinfo = users_db.get(user_id, {})
     dept = (uinfo.get('dept') or '').strip()
     manager = (uinfo.get('manager') or '').strip()
-    if dept and manager:
-        return f"{dept} {manager}"
-    elif manager:
+    if manager:
         return manager
     elif dept:
         return dept
@@ -414,12 +478,6 @@ def ensure_category_exists(dept_name):
 
 
 def record_timeline_completion(item):
-    """
-    산출물이 '완료' 처리될 때 호출된다.
-    저장소에서 삭제되어도 이 로그는 별도로 영구 보존되지만,
-    화면에 노출되는 타임라인은 '현재 저장소에 남아있는 산출물'만 대상으로 하므로
-    삭제된 산출물은 자동으로 화면에서 제외된다(요청사항 반영).
-    """
     try:
         started = datetime.strptime(item['date'], "%Y-%m-%d %H:%M")
     except Exception:
@@ -626,9 +684,15 @@ def inject_design_system():
     }
     .board-wrapper-marker { position: relative; }
 
+    .repo-title-row {
+        display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+    .repo-title { font-size: 19px; font-weight: 800; color: var(--foreground); margin: 0; }
+
     .repo-meta-row {
         display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-        margin: 6px 0 10px 0;
+        margin: 0 0 12px 0;
     }
     .repo-cat-badge {
         font-family: var(--font-mono); font-size: 11px; color: var(--accent);
@@ -638,7 +702,6 @@ def inject_design_system():
     .repo-author-badge {
         font-size: 12px; color: var(--muted-foreground);
     }
-    .repo-title { font-size: 19px; font-weight: 800; color: var(--foreground); margin: 0; }
     .repo-desc { font-size: 13px; color: var(--muted-foreground); margin: 4px 0 4px 0; }
 
     @keyframes fadeInUp {
@@ -714,12 +777,12 @@ def inject_design_system():
     .proj-status-progress {
         display: inline-block; font-size: 11px; font-family: var(--font-mono);
         background: rgba(234,88,12,0.1); color: #C2410C; border: 1px solid rgba(234,88,12,0.3);
-        padding: 2px 10px; border-radius: 999px;
+        padding: 2px 10px; border-radius: 999px; white-space: nowrap;
     }
     .proj-status-done {
         display: inline-block; font-size: 11px; font-family: var(--font-mono);
         background: rgba(22,163,74,0.1); color: #15803D; border: 1px solid rgba(22,163,74,0.3);
-        padding: 2px 10px; border-radius: 999px;
+        padding: 2px 10px; border-radius: 999px; white-space: nowrap;
     }
 
     div[data-testid="stButton"] > button {
@@ -941,12 +1004,13 @@ def render_board_table(page_items, start_idx):
         issue_cnt = len(item.get('issues', []))
         is_done = bool(item.get('completed_at'))
         status_html = "<span class='proj-status-done'>완료</span>" if is_done else "<span class='proj-status-progress'>진행중</span>"
+        manager_name = get_display_name(item['author'])
         table_rows += (
             "<tr>"
             f"<td style='width:40px; color:var(--muted-foreground); font-family:var(--font-mono);'>{row_no}</td>"
             f"<td><span class='board-dept-badge'>{item.get('category', '일반')}</span></td>"
             f"<td style='font-weight:600;'>{item['title']}</td>"
-            f"<td style='color:var(--muted-foreground);'>{item['author']}</td>"
+            f"<td style='color:var(--muted-foreground);'>{manager_name}</td>"
             f"<td style='color:var(--muted-foreground); font-family:var(--font-mono); font-size:12px;'>{item['date']}</td>"
             f"<td style='text-align:center;'>{status_html}</td>"
             f"<td style='text-align:center;'>{issue_cnt}</td>"
@@ -970,9 +1034,9 @@ def render_board_table(page_items, start_idx):
 def render_department_timeline():
     """
     부서별 제작 타임라인(간트 차트)을 렌더링한다.
-    - 대상: '현재 저장소에 남아있는' 산출물만 (삭제된 산출물은 완전히 제외)
-    - 시작: 최초 등록일(date)
-    - 종료: 완료 처리된 경우 completed_at, 아직 진행중이면 현재 시각까지 이어지는 것으로 표시
+    - 세로축을 '부서'로 통일하여 시각적으로 어수선해지지 않게 정리.
+    - 완료된 산출물은 진한 색, 진행중인 산출물은 옅은 색 + 사선 패턴으로 구분.
+    - 대상: 현재 저장소에 남아있는 산출물만 (삭제된 산출물은 완전히 제외)
     """
     repo_data_all = st.session_state['app_data']['repository']
     if not repo_data_all:
@@ -1003,10 +1067,11 @@ def render_department_timeline():
         rows.append({
             "부서": item.get('category', '일반'),
             "프로젝트명": item['title'],
+            "라벨": f"{item.get('category', '일반')} · {item['title']}",
             "시작": start_dt,
             "종료": end_dt,
             "상태": status,
-            "담당자": item.get('author', '')
+            "담당자": get_display_name(item.get('author', ''))
         })
 
     if not rows:
@@ -1014,19 +1079,24 @@ def render_department_timeline():
         return
 
     timeline_df = pd.DataFrame(rows)
+    timeline_df = timeline_df.sort_values("시작")
+
     fig = px.timeline(
         timeline_df, x_start="시작", x_end="종료", y="프로젝트명",
-        color="부서", hover_data=["담당자", "상태"],
-        color_discrete_sequence=['#0052FF', '#4D7CFF', '#7fa4ff', '#a9c1ff', '#0F172A', '#64748B', '#CBD5E1']
+        color="상태",
+        color_discrete_map={"완료": "#0052FF", "진행중": "#C7D6FF"},
+        hover_data={"부서": True, "담당자": True, "상태": True, "프로젝트명": False}
     )
-    fig.update_yaxes(autorange="reversed", title="")
+    fig.update_yaxes(autorange="reversed", title="", categoryorder="array", categoryarray=timeline_df["프로젝트명"].tolist())
     fig.update_xaxes(title="")
+    fig.update_traces(marker_line_width=0, opacity=0.95)
     fig.update_layout(
-        height=max(220, 42 * len(timeline_df)),
+        height=max(220, 46 * len(timeline_df)),
         margin=dict(l=10, r=10, t=10, b=10),
-        font=dict(family="Pretendard, sans-serif", color="#0F172A"),
+        font=dict(family="Pretendard, sans-serif", color="#0F172A", size=12),
         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-        legend_title_text='부서'
+        legend_title_text='상태',
+        bargap=0.35
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1284,11 +1354,19 @@ def show_main_page():
                     with top_col:
                         is_done = bool(item.get('completed_at'))
                         status_html = "<span class='proj-status-done'>완료</span>" if is_done else "<span class='proj-status-progress'>진행중</span>"
-                        st.markdown(f"<p class='repo-title'>{item['title']} {status_html}</p>", unsafe_allow_html=True)
+                        manager_name = get_display_name(item['author'])
+
+                        st.markdown(
+                            f"<div class='repo-title-row'>"
+                            f"<p class='repo-title'>{item['title']}</p>{status_html}"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+                        completed_part = f" · 완료 {item['completed_at']}" if is_done else ""
                         st.markdown(f"""
                             <div class='repo-meta-row'>
                                 <span class='repo-cat-badge'>{item.get('category', '일반')}</span>
-                                <span class='repo-author-badge'>{item['author']} · 등록 {item['date']}{' · 완료 ' + item['completed_at'] if is_done else ''}</span>
+                                <span class='repo-author-badge'>{manager_name} · 등록 {item['date']}{completed_part}</span>
                             </div>
                         """, unsafe_allow_html=True)
                         st.markdown(f"<p class='repo-desc'>{item['desc']}</p>", unsafe_allow_html=True)
@@ -1382,7 +1460,8 @@ def show_main_page():
 
                     with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
                         for fb in item['feedbacks']:
-                            st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb['user']}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
+                            fb_display_name = get_display_name(fb['user'])
+                            st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
 
                         fb_input = st.text_input("의견을 남겨주세요", key=f"fb_in_{item['id']}", placeholder="예: 좋은 아이디어네요! 이 부분은 이렇게 개선하면 어떨까요?")
                         if st.button("피드백 등록", key=f"fb_btn_{item['id']}"):
@@ -1400,12 +1479,13 @@ def show_main_page():
                             st.caption("등록된 이슈가 없습니다.")
                         for iss in item_issues:
                             badge_class = "issue-badge-open" if iss.get('status') == '진행중' else "issue-badge-done"
+                            iss_author_name = get_display_name(iss.get('author', ''))
                             ic1, ic2, ic3 = st.columns([4.5, 1.1, 1.1])
                             with ic1:
                                 st.markdown(
                                     f"<span class='{badge_class}'>{iss.get('status')}</span> "
                                     f"<b>{iss.get('title')}</b> "
-                                    f"<span style='color:var(--muted-foreground); font-size:11px;'>· {iss.get('author')} · {iss.get('date')}</span>",
+                                    f"<span style='color:var(--muted-foreground); font-size:11px;'>· {iss_author_name} · {iss.get('date')}</span>",
                                     unsafe_allow_html=True
                                 )
                             with ic2:
