@@ -14,6 +14,7 @@ import streamlit.components.v1 as components
 # 0. 공통 설정
 # ==========================================
 LOGO_IMAGE = "sj_signature04.png"
+DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
 
