@@ -85,17 +85,18 @@ def load_data():
                 "password": uval,
                 "dept": "시스템관리자" if is_admin_account else "",
                 "manager": "관리자" if is_admin_account else "",
-                "approved": True if is_admin_account else False,
+                "approved": True,
                 "role": "admin" if is_admin_account else "user"
             }
         elif isinstance(uval, dict):
             uval.setdefault("dept", "")
             uval.setdefault("manager", "")
-            uval.setdefault("approved", uid == "admin")
+            # 승인 절차가 폐지되었으므로, 과거에 미승인 상태로 남아있던 계정도
+            # 마이그레이션 시점에 자동으로 승인 처리하여 로그인을 막지 않는다.
+            uval["approved"] = True
             uval.setdefault("role", "admin" if uid == "admin" else "user")
             if uid == "admin":
                 uval["role"] = "admin"
-                uval["approved"] = True
             migrated_users[uid] = uval
     if "admin" not in migrated_users:
         migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
@@ -109,10 +110,6 @@ def load_data():
     if 'timeline_log' not in local_data or local_data['timeline_log'] is None:
         local_data['timeline_log'] = []
 
-    # 로컬 pickle 파일에 저장된 승인 상태(local_users_before_merge)는
-    # '가장 최근에 이 서버에서 확정된 상태'이므로, 구글 시트 값과 병합할 때
-    # 로컬 값이 더 신뢰도가 높은 것으로 취급한다.
-    # (시트 쓰기가 일시적으로 실패해도, 로컬에는 최신 승인 상태가 남아있기 때문)
     local_users_before_merge = dict(local_data['users_db'])
     local_repo_before_merge = list(local_data['repository'])
     local_categories_before_merge = list(local_data.get('categories', []))
@@ -158,28 +155,21 @@ def load_data():
                             pw = str(row['Password'])
                             dept = str(row['Dept']) if 'Dept' in users_df.columns and pd.notna(row.get('Dept')) else ""
                             manager = str(row['Manager']) if 'Manager' in users_df.columns and pd.notna(row.get('Manager')) else ""
-                            approved_raw = row.get('Approved') if 'Approved' in users_df.columns else False
-                            approved = str(approved_raw).strip().upper() in ("TRUE", "1", "예", "Y")
                             role_raw = str(row.get('Role')).strip().lower() if 'Role' in users_df.columns and pd.notna(row.get('Role')) else "user"
                             role = "admin" if role_raw == "admin" else "user"
+                            # 승인 절차 폐지: 시트에 남아있는 값과 무관하게 항상 승인된 것으로 간주한다.
+                            approved = True
                             if uid == "admin":
-                                approved = True
                                 role = "admin"
                             merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved, "role": role}
 
-                        # 핵심 수정: 시트 값과 로컬(pickle) 값이 둘 다 있는 계정은
-                        # '승인(approved)이 True인 쪽'을 우선한다.
-                        # 시트 쓰기가 일시적으로 실패해서 시트가 예전 상태(미승인)로 남아있어도,
-                        # 로컬에 이미 승인 처리가 반영되어 있다면 그 값을 유지시켜
-                        # "승인했는데 다시 대기 상태로 풀리는" 문제를 방지한다.
                         for uid, uinfo in local_users_before_merge.items():
                             if uid in deleted_ids_set:
                                 continue
                             if uid not in merged_users:
                                 merged_users[uid] = uinfo
                             else:
-                                if uinfo.get("approved") and not merged_users[uid].get("approved"):
-                                    merged_users[uid]["approved"] = True
+                                merged_users[uid]["approved"] = True
                                 if uinfo.get("role") == "admin":
                                     merged_users[uid]["role"] = "admin"
 
@@ -192,7 +182,7 @@ def load_data():
                             merged_users["admin"]["approved"] = True
                             merged_users["admin"]["role"] = "admin"
                         local_data['users_db'] = merged_users
-                        _log(f"Users 병합 완료: 총 {len(merged_users)}건 (로컬 승인 상태 우선 적용)")
+                        _log(f"Users 병합 완료: 총 {len(merged_users)}건 (승인 절차 폐지로 전원 승인 처리)")
                     else:
                         _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
                         if not users_df.empty:
@@ -307,18 +297,15 @@ def save_data(data):
                     uid = str(row['ID'])
                     if uid in deleted_ids_set:
                         continue
-                    approved_raw = row.get('Approved') if 'Approved' in latest_users_df.columns else False
                     role_raw = str(row.get('Role')).strip().lower() if 'Role' in latest_users_df.columns and pd.notna(row.get('Role')) else "user"
                     latest_users[uid] = {
                         "password": str(row['Password']),
                         "dept": str(row['Dept']) if 'Dept' in latest_users_df.columns and pd.notna(row.get('Dept')) else "",
                         "manager": str(row['Manager']) if 'Manager' in latest_users_df.columns and pd.notna(row.get('Manager')) else "",
-                        "approved": (str(approved_raw).strip().upper() in ("TRUE", "1", "예", "Y")) or uid == "admin",
+                        "approved": True,
                         "role": "admin" if (role_raw == "admin" or uid == "admin") else "user"
                     }
 
-            # data['users_db'] (현재 세션의 최신 상태, 승인 처리 등이 이미 반영됨)가
-            # 시트에서 새로 읽은 값보다 항상 우선한다.
             final_users = dict(latest_users)
             for uid, uinfo in data['users_db'].items():
                 if uid in deleted_ids_set:
@@ -342,7 +329,7 @@ def save_data(data):
                     "Password": uinfo.get("password", ""),
                     "Dept": uinfo.get("dept", ""),
                     "Manager": uinfo.get("manager", ""),
-                    "Approved": bool(uinfo.get("approved", False)),
+                    "Approved": bool(uinfo.get("approved", True)),
                     "Role": uinfo.get("role", "user")
                 })
             users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved", "Role"])
@@ -383,9 +370,6 @@ def save_data(data):
                 core_save_failed = True
                 raise e_c
 
-            # TimelineLog는 부가(선택) 기능이다.
-            # 이 시트가 아직 만들어져 있지 않아도 위의 핵심 데이터(Users/Repository/Categories)
-            # 저장에는 절대 영향을 주지 않도록 별도의 try/except로 완전히 분리한다.
             try:
                 if data.get('timeline_log'):
                     timeline_df = pd.DataFrame(data['timeline_log'])
@@ -421,7 +405,7 @@ if 'logged_in' not in st.session_state:
 if not st.session_state['logged_in'] and "user_session" in st.query_params:
     _session_uid = st.query_params["user_session"]
     _uinfo_check = st.session_state['app_data'].get('users_db', {}).get(_session_uid)
-    if _uinfo_check is not None and _uinfo_check.get('approved', False):
+    if _uinfo_check is not None and _uinfo_check.get('approved', True):
         st.session_state['logged_in'] = True
         st.session_state['user_id'] = _session_uid
         st.session_state['last_activity'] = now_kst()
@@ -440,6 +424,11 @@ if 'repo_page' not in st.session_state:
     st.session_state['repo_page'] = 1
 if 'dashboard_page' not in st.session_state:
     st.session_state['dashboard_page'] = 1
+
+if 'pending_signup' not in st.session_state:
+    st.session_state['pending_signup'] = None
+if 'show_signup_confirm' not in st.session_state:
+    st.session_state['show_signup_confirm'] = False
 
 
 def get_display_name(user_id):
@@ -497,6 +486,25 @@ def record_timeline_completion(item):
         "completed_at": completed.strftime("%Y-%m-%d %H:%M"),
         "duration_hours": duration_hours
     })
+
+
+def finalize_signup(pending):
+    """
+    확인 모달에서 '완료'를 눌렀을 때 실제로 계정을 생성하는 함수.
+    승인 절차가 폐지되었으므로 approved는 항상 True로 즉시 부여한다.
+    """
+    st.session_state['app_data']['users_db'][pending['id']] = {
+        "password": pending['pw'],
+        "dept": pending['dept'],
+        "manager": pending['manager'],
+        "approved": True,
+        "role": "user"
+    }
+    if pending['id'] in st.session_state['app_data'].get('deleted_ids', []):
+        st.session_state['app_data']['deleted_ids'].remove(pending['id'])
+    ensure_category_exists(pending['dept'])
+    save_data(st.session_state['app_data'])
+    return st.session_state.get('last_save_status') != "fail"
 
 
 # ==========================================
@@ -785,6 +793,13 @@ def inject_design_system():
         padding: 2px 10px; border-radius: 999px; white-space: nowrap;
     }
 
+    .confirm-row {
+        display: flex; justify-content: space-between; padding: 10px 0;
+        border-bottom: 1px solid var(--border); font-size: 14px;
+    }
+    .confirm-row .k { color: var(--muted-foreground); font-weight: 600; }
+    .confirm-row .v { color: var(--foreground); font-weight: 700; }
+
     div[data-testid="stButton"] > button {
         border-radius: 10px !important;
         font-weight: 500 !important;
@@ -859,6 +874,56 @@ inject_design_system()
 
 
 # ==========================================
+# 2-2. 회원가입 확인 모달
+# ==========================================
+def _render_signup_confirm_body():
+    pending = st.session_state.get('pending_signup')
+    if not pending:
+        return
+
+    st.markdown("입력하신 회원가입 정보가 맞는지 다시 한번 확인해 주세요.")
+    st.write("")
+    st.markdown(f"""
+        <div class='confirm-row'><span class='k'>부서명</span><span class='v'>{pending['dept']}</span></div>
+        <div class='confirm-row'><span class='k'>담당자명</span><span class='v'>{pending['manager']}</span></div>
+        <div class='confirm-row'><span class='k'>아이디</span><span class='v'>{pending['id']}</span></div>
+    """, unsafe_allow_html=True)
+    st.write("")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("다시 입력하기", key="signup_confirm_cancel", use_container_width=True):
+            st.session_state['pending_signup'] = None
+            st.session_state['show_signup_confirm'] = False
+            st.rerun()
+    with c2:
+        if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
+            ok = finalize_signup(pending)
+            st.session_state['pending_signup'] = None
+            st.session_state['show_signup_confirm'] = False
+            if ok:
+                st.session_state['signup_success_msg'] = f"[{pending['id']}] 계정이 생성되었습니다. 바로 로그인하실 수 있습니다."
+            st.rerun()
+
+
+if hasattr(st, "dialog"):
+    @st.dialog("회원가입 정보 확인")
+    def show_signup_confirm_dialog():
+        _render_signup_confirm_body()
+elif hasattr(st, "experimental_dialog"):
+    @st.experimental_dialog("회원가입 정보 확인")
+    def show_signup_confirm_dialog():
+        _render_signup_confirm_body()
+else:
+    def show_signup_confirm_dialog():
+        # 구버전 Streamlit 폴백: 진짜 모달은 아니지만 화면 중앙 강조 박스로 대체
+        st.markdown("---")
+        with st.container(border=True):
+            st.markdown("#### 회원가입 정보 확인")
+            _render_signup_confirm_body()
+
+
+# ==========================================
 # 3. 로그인 및 회원가입 화면
 # ==========================================
 def show_login_page():
@@ -897,8 +962,8 @@ def show_login_page():
                     user_info = users_db.get(user_id)
                     if user_info is None or user_info.get("password") != password:
                         st.error("아이디가 존재하지 않거나 비밀번호가 틀렸습니다.")
-                    elif not user_info.get("approved", False):
-                        st.warning("아직 관리자 승인이 완료되지 않은 계정입니다. 관리자 승인 후 로그인해 주세요.")
+                    elif not user_info.get("approved", True):
+                        st.warning("아직 관리자 승인이 완료되지 않은 계정입니다. 관리자에게 문의해 주세요.")
                     else:
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
@@ -907,6 +972,10 @@ def show_login_page():
                         st.rerun()
 
             with tab_signup:
+                if st.session_state.get('signup_success_msg'):
+                    st.success(st.session_state['signup_success_msg'])
+                    st.session_state['signup_success_msg'] = None
+
                 with st.form("signup_form"):
                     new_dept = st.text_input("부서명", key="signup_dept", placeholder="예: 교육혁신처")
                     new_manager = st.text_input("담당자명", key="signup_manager", placeholder="예: 홍길동")
@@ -924,19 +993,19 @@ def show_login_page():
                     elif new_pw != new_pw_check:
                         st.error("비밀번호가 일치하지 않습니다.")
                     else:
-                        st.session_state['app_data']['users_db'][new_id] = {
-                            "password": new_pw,
+                        # 유효성 검사를 통과하면 곧바로 계정을 만들지 않고,
+                        # 입력 내용을 임시 저장한 뒤 확인 모달을 띄운다.
+                        st.session_state['pending_signup'] = {
                             "dept": new_dept.strip(),
                             "manager": new_manager.strip(),
-                            "approved": False,
-                            "role": "user"
+                            "id": new_id.strip(),
+                            "pw": new_pw
                         }
-                        if new_id in st.session_state['app_data'].get('deleted_ids', []):
-                            st.session_state['app_data']['deleted_ids'].remove(new_id)
-                        ensure_category_exists(new_dept.strip())
-                        save_data(st.session_state['app_data'])
-                        if st.session_state.get('last_save_status') != "fail":
-                            st.success("계정 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.")
+                        st.session_state['show_signup_confirm'] = True
+                        st.rerun()
+
+    if st.session_state.get('show_signup_confirm') and st.session_state.get('pending_signup'):
+        show_signup_confirm_dialog()
 
 
 # ==========================================
@@ -1032,12 +1101,6 @@ def render_board_table(page_items, start_idx):
 
 
 def render_department_timeline():
-    """
-    부서별 제작 타임라인(간트 차트)을 렌더링한다.
-    - 세로축을 '부서'로 통일하여 시각적으로 어수선해지지 않게 정리.
-    - 완료된 산출물은 진한 색, 진행중인 산출물은 옅은 색 + 사선 패턴으로 구분.
-    - 대상: 현재 저장소에 남아있는 산출물만 (삭제된 산출물은 완전히 제외)
-    """
     repo_data_all = st.session_state['app_data']['repository']
     if not repo_data_all:
         st.info("타임라인을 표시할 산출물이 없습니다.")
@@ -1067,7 +1130,6 @@ def render_department_timeline():
         rows.append({
             "부서": item.get('category', '일반'),
             "프로젝트명": item['title'],
-            "라벨": f"{item.get('category', '일반')} · {item['title']}",
             "시작": start_dt,
             "종료": end_dt,
             "상태": status,
@@ -1540,13 +1602,14 @@ def show_main_page():
                     "담당자명": uinfo.get("manager", ""),
                     "비밀번호": uinfo.get("password", ""),
                     "권한": "관리자" if uinfo.get("role") == "admin" else "일반",
-                    "승인 여부": "승인됨" if uinfo.get("approved", False) else "대기중"
+                    "승인 여부": "승인됨" if uinfo.get("approved", True) else "대기중"
                 })
             users_df = pd.DataFrame(users_rows)
             st.dataframe(users_df, use_container_width=True, hide_index=True)
 
             st.markdown("#### 회원가입 승인 대기 목록")
-            pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", False)]
+            st.caption("현재는 회원가입 시 자동 승인되므로 이 목록은 비어있는 것이 정상입니다. 과거에 미승인 상태로 남아있던 계정이 있을 경우에만 표시됩니다.")
+            pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", True)]
             if not pending_users:
                 st.info("승인 대기 중인 계정이 없습니다.")
             else:
@@ -1566,7 +1629,7 @@ def show_main_page():
 
             st.markdown("---")
             st.markdown("#### 관리자 권한 부여 / 해제")
-            st.caption("관리자 권한을 부여받은 계정은 모든 산출물을 수정·삭제하고, 다른 사용자를 승인/삭제하며, 부서 목록을 관리할 수 있게 됩니다. 신중하게 부여해 주세요.")
+            st.caption("관리자 권한을 부여받은 계정은 모든 산출물을 수정·삭제하고, 다른 사용자를 삭제하며, 부서 목록을 관리할 수 있게 됩니다. 신중하게 부여해 주세요.")
 
             non_root_users = [uid for uid in users_db.keys() if uid != 'admin']
             if not non_root_users:
