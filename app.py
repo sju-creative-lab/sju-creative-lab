@@ -26,10 +26,6 @@ def now_kst():
 
 
 def safe_show_logo(width=None, use_container_width=False):
-    """
-    로고 이미지 출력을 시도하되, 파일이 없거나 손상되어 있어도
-    앱 전체가 MediaFileStorageError로 죽지 않도록 방어하는 함수.
-    """
     try:
         if os.path.exists(LOGO_IMAGE):
             if width:
@@ -98,7 +94,6 @@ def load_data():
         migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
     local_data['users_db'] = migrated_users
 
-    # ---- 산출물 항목에 issues 필드가 없는 구버전 데이터 자동 마이그레이션 ----
     for item in local_data.get('repository', []):
         if 'issues' not in item or item['issues'] is None:
             item['issues'] = []
@@ -153,9 +148,13 @@ def load_data():
                             if uid == "admin":
                                 approved = True
                             merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved}
+                        # 로컬에만 있는 계정 병합 시에도 삭제 목록은 반드시 재확인
                         for uid, uinfo in local_users_before_merge.items():
                             if uid not in merged_users and uid not in deleted_ids_set:
                                 merged_users[uid] = uinfo
+                        for uid in list(merged_users.keys()):
+                            if uid in deleted_ids_set:
+                                del merged_users[uid]
                         if "admin" not in merged_users:
                             merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
                         local_data['users_db'] = merged_users
@@ -239,6 +238,15 @@ def load_data():
 
 
 def save_data(data):
+    """
+    저장 시 주의사항:
+    Google Sheets 모드에서는 절대로 '이 세션이 들고 있는 users_db 스냅샷'을
+    그대로 시트에 덮어쓰지 않는다.
+    반드시 저장 직전에 시트의 최신 상태를 다시 읽어와서
+    (1) 다른 세션이 그 사이 추가했을 수 있는 계정은 보존하고
+    (2) deleted_ids에 있는 계정은 어떤 경우에도 최종적으로 제외한 뒤
+    병합된 결과만 다시 써야, '삭제했는데 되살아나는' 문제가 재발하지 않는다.
+    """
     with open(DATA_FILE, "wb") as f:
         pickle.dump(data, f)
 
@@ -247,8 +255,42 @@ def save_data(data):
             from streamlit_gsheets import GSheetsConnection
             conn = st.connection("gsheets", type=GSheetsConnection)
 
-            users_rows = []
+            deleted_ids_set = set(data.get('deleted_ids', []))
+
+            try:
+                latest_users_df = conn.read(worksheet="Users", ttl=0)
+            except Exception:
+                latest_users_df = pd.DataFrame(columns=["ID", "Password", "Dept", "Manager", "Approved"])
+
+            latest_users = {}
+            if not latest_users_df.empty and {'ID', 'Password'}.issubset(set(latest_users_df.columns)):
+                for _, row in latest_users_df.dropna(subset=['ID']).iterrows():
+                    uid = str(row['ID'])
+                    if uid in deleted_ids_set:
+                        continue
+                    approved_raw = row.get('Approved') if 'Approved' in latest_users_df.columns else False
+                    latest_users[uid] = {
+                        "password": str(row['Password']),
+                        "dept": str(row['Dept']) if 'Dept' in latest_users_df.columns and pd.notna(row.get('Dept')) else "",
+                        "manager": str(row['Manager']) if 'Manager' in latest_users_df.columns and pd.notna(row.get('Manager')) else "",
+                        "approved": (str(approved_raw).strip().upper() in ("TRUE", "1", "예", "Y")) or uid == "admin"
+                    }
+
+            final_users = dict(latest_users)
             for uid, uinfo in data['users_db'].items():
+                if uid in deleted_ids_set:
+                    continue
+                final_users[uid] = uinfo
+            for uid in list(final_users.keys()):
+                if uid in deleted_ids_set:
+                    del final_users[uid]
+            if "admin" not in final_users:
+                final_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True}
+
+            data['users_db'] = final_users
+
+            users_rows = []
+            for uid, uinfo in final_users.items():
                 users_rows.append({
                     "ID": uid,
                     "Password": uinfo.get("password", ""),
@@ -302,7 +344,6 @@ if not st.session_state['logged_in'] and "user_session" in st.query_params:
     else:
         st.query_params.clear()
 
-# ---- 사이드바 필터 상태 기본값 초기화 ----
 if 'filter_reset_counter' not in st.session_state:
     st.session_state['filter_reset_counter'] = 0
 
@@ -313,7 +354,6 @@ _kw_key = f"filter_keyword_{_reset_suffix}"
 
 
 def get_display_name(user_id):
-    """로그인한 사용자의 '부서명 담당자명' 표기를 반환. 정보가 없으면 아이디로 대체."""
     users_db = st.session_state['app_data'].get('users_db', {})
     uinfo = users_db.get(user_id, {})
     dept = (uinfo.get('dept') or '').strip()
@@ -354,7 +394,7 @@ def inject_timer_js():
 
 
 # ==========================================
-# 2-1. 디자인 토큰 & 전역 스타일 (라이트/다크 자동 대응)
+# 2-1. 디자인 토큰 & 전역 스타일 (이전 CSS로 롤백된 상태)
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -749,8 +789,6 @@ def show_login_page():
                         save_data(st.session_state['app_data'])
                         if st.session_state.get('last_save_status') != "fail":
                             st.success("계정 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.")
-
-            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ==========================================
@@ -1277,7 +1315,7 @@ def show_main_page():
 
 
 # ==========================================
-# 6. 사이드바 구성 (로그인 상태일 때만 노출) — 실제 필터 기능 연동
+# 6. 사이드바 구성
 # ==========================================
 def show_sidebar():
     with st.sidebar:
@@ -1313,7 +1351,7 @@ def show_sidebar():
 
 
 # ==========================================
-# 7. 최종 라우팅 (로그인 여부에 따라 사이드바 노출 제어)
+# 7. 최종 라우팅
 # ==========================================
 if not st.session_state['logged_in']:
     st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
