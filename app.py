@@ -1046,11 +1046,6 @@ def show_survey_page():
     users_db = st.session_state['app_data'].get('users_db', {})
     uinfo = users_db.get(user_id, {})
 
-    # 좌측 상단 로고 배치
-    logo_col, empty_col = st.columns([1, 5])
-    with logo_col:
-        safe_show_logo(use_container_width=True)
-
     st.markdown("### 부서별 자동화 대상 업무 현황조사")
     st.markdown("""
     <div style='background-color: #FFF3CD; padding: 15px; border-radius: 8px; border: 1px solid #FFEEBA; margin-bottom: 20px; color: #856404;'>
@@ -1113,6 +1108,13 @@ def show_survey_page():
     # 제출이 완료되어 플래그가 세워졌을 경우 팝업 호출
     if st.session_state.get('show_survey_success', False):
         show_survey_success_dialog()
+        
+    st.write("<br><br>", unsafe_allow_html=True)
+    
+    # 폼 바로 아래 (가운데 하단)에 로고 작게 배치
+    _, bottom_logo_col, _ = st.columns([4, 1.5, 4])
+    with bottom_logo_col:
+        safe_show_logo(use_container_width=True)
 
 
 # ==========================================
@@ -1838,7 +1840,7 @@ def show_main_page():
     if is_admin:
         with tab4:
             st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
-            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
+            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다. 구글 시트의 'survey' 탭과 연동됩니다.")
             
             survey_list = st.session_state['app_data'].get('survey', [])
             
