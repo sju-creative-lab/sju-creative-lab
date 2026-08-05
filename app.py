@@ -403,7 +403,7 @@ def save_data(data):
             st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
             if core_save_failed:
                 st.session_state['last_save_status'] = "fail"
-                st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
+                st.error(f"구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
             else:
                 st.session_state['last_save_status'] = "success"
     else:
@@ -413,18 +413,9 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 
+# 세션 초기화 (로그인 상태)
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-
-if not st.session_state['logged_in'] and "user_session" in st.query_params:
-    _session_uid = st.query_params["user_session"]
-    _uinfo_check = st.session_state['app_data'].get('users_db', {}).get(_session_uid)
-    if _uinfo_check is not None and _uinfo_check.get('approved', True):
-        st.session_state['logged_in'] = True
-        st.session_state['user_id'] = _session_uid
-        st.session_state['last_activity'] = now_kst()
-    else:
-        st.query_params.clear()
 
 if 'filter_reset_counter' not in st.session_state:
     st.session_state['filter_reset_counter'] = 0
@@ -522,6 +513,8 @@ def finalize_signup(pending):
 # 2. 커스텀 CSS & 자바스크립트 타이머
 # ==========================================
 def inject_timer_js():
+    if 'last_activity' not in st.session_state:
+        return
     expiry_time = st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES)
     expiry_timestamp = expiry_time.timestamp() * 1000
     components.html(f"""
@@ -978,7 +971,7 @@ def show_login_page():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
                         st.session_state['last_activity'] = now_kst()
-                        st.query_params["user_session"] = user_id
+                        # URL 기반 자동 로그인 로직 제거 (보안 강화 및 로그아웃 유지)
                         st.rerun()
 
             with tab_signup:
@@ -1020,7 +1013,7 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>제출된 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
@@ -1290,8 +1283,12 @@ def render_department_timeline():
 # ==========================================
 def show_main_page():
     now = now_kst()
-    if now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
-        st.query_params.clear()
+    # 타임아웃 로그아웃 시 세션 정보 파기
+    if 'last_activity' in st.session_state and now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
+        keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
+        for k in keys_to_clear:
+            if k in st.session_state:
+                del st.session_state[k]
         st.session_state['logged_in'] = False
         st.rerun()
 
@@ -1308,7 +1305,11 @@ def show_main_page():
         r1, r2, r3, r4 = st.columns([1, 1, 1, 1.5])
         with r1:
             if st.button("로그아웃", use_container_width=True):
-                st.query_params.clear()
+                # 로그아웃 버튼 클릭 시 핵심 세션 정보를 완벽히 파기하여 재로그인 유도
+                keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
+                for k in keys_to_clear:
+                    if k in st.session_state:
+                        del st.session_state[k]
                 st.session_state['logged_in'] = False
                 st.rerun()
         with r2:
