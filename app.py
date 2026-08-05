@@ -1303,8 +1303,9 @@ def show_main_page():
 
     is_admin = is_user_admin(current_user_id)
 
+    # ---------------- 탭 생성 로직 수정 ----------------
     if is_admin:
-        tab1, tab2, tab3 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소", "계정 관리"])
+        tab1, tab2, tab3, tab4 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소", "계정 관리", "현황 조사 제출 관리"])
     else:
         tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
 
@@ -1803,6 +1804,32 @@ def show_main_page():
                     with st.expander(f"[{tag}] 전체 traceback 보기"):
                         st.code(tb, language="text")
 
+    # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
+    if is_admin:
+        with tab4:
+            st.markdown("### 📊 부서별 자동화 대상 업무 현황조사 제출 내역")
+            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다. 구글 시트의 'survey' 탭과 연동됩니다.")
+            
+            survey_list = st.session_state['app_data'].get('survey', [])
+            
+            if not survey_list:
+                st.info("아직 제출된 현황조사 데이터가 없습니다.")
+            else:
+                survey_df = pd.DataFrame(survey_list)
+                
+                st.markdown(f"**총 제출 건수:** {len(survey_df)}건")
+                
+                st.dataframe(survey_df, use_container_width=True, hide_index=True)
+                
+                csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
+                
+                st.download_button(
+                    label="📥 CSV 파일 다운로드 (엑셀 호환)",
+                    data=csv_data,
+                    file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
 
 # ==========================================
 # 6. 사이드바 구성
@@ -1856,7 +1883,6 @@ else:
     uinfo = users_db.get(user_id, {})
     is_completed = uinfo.get('survey_completed', False)
 
-    # 현황조사를 제출하지 않은 유저는 메인 화면 대신 조사 폼을 보여줍니다
     if not is_completed:
         st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
         show_survey_page()
