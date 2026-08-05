@@ -1020,7 +1020,7 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>제출된 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>제출된 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
