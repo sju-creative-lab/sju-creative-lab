@@ -38,7 +38,7 @@ def safe_show_logo(width=None, use_container_width=False):
             st.markdown(
                 "<div style='text-align:center; padding:14px; border:1px dashed var(--border); "
                 "border-radius:12px; color:var(--muted-foreground); font-size:12px;'>"
-                "로고 이미지(logo-main03_1.png)를 찾을 수 없습니다.<br>저장소에 파일을 업로드해 주세요."
+                "로고 이미지를 찾을 수 없습니다.<br>저장소에 파일을 업로드해 주세요."
                 "</div>",
                 unsafe_allow_html=True
             )
@@ -1017,12 +1017,39 @@ def show_login_page():
 
 
 # ==========================================
-# 3-1. 부서별 자동화 현황조사 폼 화면
+# 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
+def _render_survey_success_body():
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.write("")
+    if st.button("확인하였습니다", use_container_width=True, type="primary"):
+        st.session_state['show_survey_success'] = False
+        st.rerun()
+
+if hasattr(st, "dialog"):
+    @st.dialog("제출 완료 안내")
+    def show_survey_success_dialog():
+        _render_survey_success_body()
+elif hasattr(st, "experimental_dialog"):
+    @st.experimental_dialog("제출 완료 안내")
+    def show_survey_success_dialog():
+        _render_survey_success_body()
+else:
+    def show_survey_success_dialog():
+        st.markdown("---")
+        with st.container(border=True):
+            st.markdown("#### 제출 완료 안내")
+            _render_survey_success_body()
+
 def show_survey_page():
     user_id = st.session_state['user_id']
     users_db = st.session_state['app_data'].get('users_db', {})
     uinfo = users_db.get(user_id, {})
+
+    # 좌측 상단 로고 배치
+    logo_col, empty_col = st.columns([1, 5])
+    with logo_col:
+        safe_show_logo(use_container_width=True)
 
     st.markdown("### 부서별 자동화 대상 업무 현황조사")
     st.markdown("""
@@ -1056,7 +1083,7 @@ def show_survey_page():
 
         improvement = st.text_area("개선 필요사항", placeholder="- 엑셀에 입력하는 과정에서 오타 발생\n- 수기입력에 행정력 소모 심함\n- 기존 이용내역에 대한 통계 등 누적자료에 대한 분석 어려움")
 
-        submitted = st.form_submit_button("현황조사 제출 완료하기 (제출 후 메인페이지 이동)", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("현황조사 제출 완료하기", use_container_width=True, type="primary")
 
         if submitted:
             if not task_name.strip():
@@ -1080,8 +1107,12 @@ def show_survey_page():
 
                 save_data(st.session_state['app_data'])
                 if st.session_state.get('last_save_status') != "fail":
-                    st.success("현황조사가 제출되었습니다. 잠시 후 메인 화면으로 이동합니다.")
+                    st.session_state['show_survey_success'] = True
                     st.rerun()
+
+    # 제출이 완료되어 플래그가 세워졌을 경우 팝업 호출
+    if st.session_state.get('show_survey_success', False):
+        show_survey_success_dialog()
 
 
 # ==========================================
@@ -1303,7 +1334,6 @@ def show_main_page():
 
     is_admin = is_user_admin(current_user_id)
 
-    # ---------------- 탭 생성 로직 수정 ----------------
     if is_admin:
         tab1, tab2, tab3, tab4 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소", "계정 관리", "현황 조사 제출 관리"])
     else:
@@ -1824,12 +1854,13 @@ def show_main_page():
                 csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
                 
                 st.download_button(
-                    label="CSV 파일 다운로드 (엑셀 호환)",
+                    label="CSV 파일 다운로드",
                     data=csv_data,
                     file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
+
 
 # ==========================================
 # 6. 사이드바 구성
@@ -1883,7 +1914,11 @@ else:
     uinfo = users_db.get(user_id, {})
     is_completed = uinfo.get('survey_completed', False)
 
-    if not is_completed:
+    # 안내 팝업이 띄워져야 하는 플래그 상태거나 현황조사가 제출되지 않은 경우
+    if st.session_state.get('show_survey_success', False):
+        st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
+        show_survey_page()
+    elif not is_completed:
         st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
         show_survey_page()
     else:
