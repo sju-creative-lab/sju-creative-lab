@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -58,11 +58,12 @@ def safe_show_logo(width=None, use_container_width=False):
 def load_data():
     local_data = {
         "users_db": {
-            "admin": {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
+            "admin": {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
         },
         "repository": [],
         "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"],
-        "deleted_ids": []
+        "deleted_ids": [],
+        "survey": []
     }
 
     if os.path.exists(DATA_FILE):
@@ -75,6 +76,9 @@ def load_data():
         local_data['deleted_ids'] = []
     deleted_ids_set = set(local_data['deleted_ids'])
 
+    if 'survey' not in local_data or local_data['survey'] is None:
+        local_data['survey'] = []
+
     migrated_users = {}
     for uid, uval in local_data.get('users_db', {}).items():
         if uid in deleted_ids_set:
@@ -86,20 +90,21 @@ def load_data():
                 "dept": "시스템관리자" if is_admin_account else "",
                 "manager": "관리자" if is_admin_account else "",
                 "approved": True,
-                "role": "admin" if is_admin_account else "user"
+                "role": "admin" if is_admin_account else "user",
+                "survey_completed": True if is_admin_account else False
             }
         elif isinstance(uval, dict):
             uval.setdefault("dept", "")
             uval.setdefault("manager", "")
-            # 승인 절차가 폐지되었으므로, 과거에 미승인 상태로 남아있던 계정도
-            # 마이그레이션 시점에 자동으로 승인 처리하여 로그인을 막지 않는다.
             uval["approved"] = True
             uval.setdefault("role", "admin" if uid == "admin" else "user")
+            uval.setdefault("survey_completed", True if uid == "admin" else False)
             if uid == "admin":
                 uval["role"] = "admin"
+                uval["survey_completed"] = True
             migrated_users[uid] = uval
     if "admin" not in migrated_users:
-        migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
+        migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
     local_data['users_db'] = migrated_users
 
     for item in local_data.get('repository', []):
@@ -157,11 +162,13 @@ def load_data():
                             manager = str(row['Manager']) if 'Manager' in users_df.columns and pd.notna(row.get('Manager')) else ""
                             role_raw = str(row.get('Role')).strip().lower() if 'Role' in users_df.columns and pd.notna(row.get('Role')) else "user"
                             role = "admin" if role_raw == "admin" else "user"
-                            # 승인 절차 폐지: 시트에 남아있는 값과 무관하게 항상 승인된 것으로 간주한다.
                             approved = True
+                            survey_completed = bool(row.get('SurveyCompleted', False)) if 'SurveyCompleted' in users_df.columns and pd.notna(row.get('SurveyCompleted')) else False
+                            
                             if uid == "admin":
                                 role = "admin"
-                            merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved, "role": role}
+                                survey_completed = True
+                            merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved, "role": role, "survey_completed": survey_completed}
 
                         for uid, uinfo in local_users_before_merge.items():
                             if uid in deleted_ids_set:
@@ -177,16 +184,15 @@ def load_data():
                             if uid in deleted_ids_set:
                                 del merged_users[uid]
                         if "admin" not in merged_users:
-                            merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
+                            merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
                         else:
                             merged_users["admin"]["approved"] = True
                             merged_users["admin"]["role"] = "admin"
+                            merged_users["admin"]["survey_completed"] = True
                         local_data['users_db'] = merged_users
                         _log(f"Users 병합 완료: 총 {len(merged_users)}건 (승인 절차 폐지로 전원 승인 처리)")
                     else:
                         _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
-                        if not users_df.empty:
-                            _log(f"⚠️ 실제 컬럼명: {list(users_df.columns)} (필요: ID, Password, Dept, Manager, Approved, Role)", "warn")
                 except Exception as e_users:
                     _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
 
@@ -230,42 +236,39 @@ def load_data():
 
                         local_data['repository'] = final_repo
                         _log(f"Repository 로드 완료(시트 기준): 총 {len(final_repo)}건")
-                    elif not repo_df.empty and 'id' not in repo_df.columns:
-                        _log(f"⚠️ Repository 시트에 'id' 헤더가 없습니다. 실제 컬럼명: {list(repo_df.columns)}", "warn")
                     else:
                         local_data['repository'] = []
-                        _log("ℹ️ Repository 시트가 비어 있습니다(헤더만 있고 데이터 행 없음).")
                 except Exception as e_repo:
                     _log(f"❌ Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
-                    _log("⚠️ 시트 읽기 실패로 인해 로컬 캐시 데이터를 임시로 유지합니다(비상용).", "warn")
 
                 try:
                     cat_df = conn.read(worksheet="Categories", ttl=0)
-                    _log(f"Categories 시트 읽기 성공: {len(cat_df)}행, 컬럼={list(cat_df.columns)}")
                     if not cat_df.empty and 'category' in cat_df.columns:
                         cat_list = cat_df['category'].dropna().astype(str).tolist()
                         if "전체" not in cat_list:
                             cat_list.insert(0, "전체")
                         local_data['categories'] = cat_list
-                        _log(f"Categories 로드 완료(시트 기준): 총 {len(cat_list)}건")
-                    elif not cat_df.empty and 'category' not in cat_df.columns:
-                        _log(f"⚠️ Categories 시트에 'category' 헤더가 없습니다. 실제 컬럼명: {list(cat_df.columns)}", "warn")
                     else:
-                        _log("ℹ️ Categories 시트가 비어 있습니다. 로컬 기본 부서 목록을 사용합니다.", "warn")
+                        local_data['categories'] = local_categories_before_merge
                 except Exception as e_cat:
-                    _log(f"❌ Categories 시트 읽기 실패: {_fmt_err(e_cat, 'categories_read')}", "error")
-                    _log("⚠️ Categories 시트가 아직 없다면, 구글 스프레드시트에 'Categories'라는 이름의 탭을 만들고 A1 셀에 'category' 헤더를 입력해주세요.", "warn")
                     local_data['categories'] = local_categories_before_merge
+                    
+                try:
+                    survey_df = conn.read(worksheet="survey", ttl=0)
+                    if not survey_df.empty:
+                        local_data['survey'] = survey_df.to_dict('records')
+                    else:
+                        local_data['survey'] = []
+                except Exception as e_sv:
+                    local_data['survey'] = local_data.get('survey', [])
+                    _log(f"ℹ️ survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
 
                 try:
                     timeline_df = conn.read(worksheet="TimelineLog", ttl=0)
                     if not timeline_df.empty:
                         local_data['timeline_log'] = timeline_df.to_dict('records')
-                        _log(f"TimelineLog 시트 읽기 성공: {len(timeline_df)}행")
-                    else:
-                        _log("ℹ️ TimelineLog 시트가 비어 있습니다.")
                 except Exception as e_tl:
-                    _log(f"ℹ️ TimelineLog 시트를 찾을 수 없습니다(선택 기능이므로 무시됩니다). {_fmt_err(e_tl, 'timeline_read')}", "warn")
+                    pass
         else:
             _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
     except Exception as e:
@@ -289,7 +292,7 @@ def save_data(data):
             try:
                 latest_users_df = conn.read(worksheet="Users", ttl=0)
             except Exception:
-                latest_users_df = pd.DataFrame(columns=["ID", "Password", "Dept", "Manager", "Approved", "Role"])
+                latest_users_df = pd.DataFrame(columns=["ID", "Password", "Dept", "Manager", "Approved", "Role", "SurveyCompleted"])
 
             latest_users = {}
             if not latest_users_df.empty and {'ID', 'Password'}.issubset(set(latest_users_df.columns)):
@@ -303,7 +306,8 @@ def save_data(data):
                         "dept": str(row['Dept']) if 'Dept' in latest_users_df.columns and pd.notna(row.get('Dept')) else "",
                         "manager": str(row['Manager']) if 'Manager' in latest_users_df.columns and pd.notna(row.get('Manager')) else "",
                         "approved": True,
-                        "role": "admin" if (role_raw == "admin" or uid == "admin") else "user"
+                        "role": "admin" if (role_raw == "admin" or uid == "admin") else "user",
+                        "survey_completed": bool(row.get('SurveyCompleted', False)) if 'SurveyCompleted' in latest_users_df.columns and pd.notna(row.get('SurveyCompleted')) else False
                     }
 
             final_users = dict(latest_users)
@@ -315,10 +319,11 @@ def save_data(data):
                 if uid in deleted_ids_set:
                     del final_users[uid]
             if "admin" not in final_users:
-                final_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin"}
+                final_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
             else:
                 final_users["admin"]["role"] = "admin"
                 final_users["admin"]["approved"] = True
+                final_users["admin"]["survey_completed"] = True
 
             data['users_db'] = final_users
 
@@ -330,9 +335,10 @@ def save_data(data):
                     "Dept": uinfo.get("dept", ""),
                     "Manager": uinfo.get("manager", ""),
                     "Approved": bool(uinfo.get("approved", True)),
-                    "Role": uinfo.get("role", "user")
+                    "Role": uinfo.get("role", "user"),
+                    "SurveyCompleted": bool(uinfo.get("survey_completed", False))
                 })
-            users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved", "Role"])
+            users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved", "Role", "SurveyCompleted"])
 
             try:
                 conn.update(worksheet="Users", data=users_df)
@@ -371,15 +377,23 @@ def save_data(data):
                 raise e_c
 
             try:
+                if data.get('survey'):
+                    survey_df = pd.DataFrame(data['survey'])
+                else:
+                    survey_df = pd.DataFrame(columns=['부서명', '담당자 성명', '업무명', '관리 매체', '주 사용자', '업무주기', '1회 소요시간', '연계 부서', '개선 필요사항', '제출일', 'User_ID'])
+                conn.update(worksheet="survey", data=survey_df)
+            except Exception as e_sv:
+                core_save_failed = True
+                raise e_sv
+
+            try:
                 if data.get('timeline_log'):
                     timeline_df = pd.DataFrame(data['timeline_log'])
                 else:
                     timeline_df = pd.DataFrame(columns=['id', 'title', 'category', 'author', 'started_at', 'completed_at', 'duration_hours'])
                 conn.update(worksheet="TimelineLog", data=timeline_df)
             except Exception as e_tl:
-                st.session_state.setdefault('gsheets_debug_log', []).append(
-                    ("warn", f"ℹ️ TimelineLog 시트 저장을 건너뛰었습니다(시트 탭이 없어도 정상 동작에는 영향 없음): [{type(e_tl).__name__}] {e_tl}")
-                )
+                pass
 
             st.session_state['last_save_status'] = "success"
         except Exception as e:
@@ -489,16 +503,13 @@ def record_timeline_completion(item):
 
 
 def finalize_signup(pending):
-    """
-    확인 모달에서 '완료'를 눌렀을 때 실제로 계정을 생성하는 함수.
-    승인 절차가 폐지되었으므로 approved는 항상 True로 즉시 부여한다.
-    """
     st.session_state['app_data']['users_db'][pending['id']] = {
         "password": pending['pw'],
         "dept": pending['dept'],
         "manager": pending['manager'],
         "approved": True,
-        "role": "user"
+        "role": "user",
+        "survey_completed": False
     }
     if pending['id'] in st.session_state['app_data'].get('deleted_ids', []):
         st.session_state['app_data']['deleted_ids'].remove(pending['id'])
@@ -916,7 +927,6 @@ elif hasattr(st, "experimental_dialog"):
         _render_signup_confirm_body()
 else:
     def show_signup_confirm_dialog():
-        # 구버전 Streamlit 폴백: 진짜 모달은 아니지만 화면 중앙 강조 박스로 대체
         st.markdown("---")
         with st.container(border=True):
             st.markdown("#### 회원가입 정보 확인")
@@ -993,8 +1003,6 @@ def show_login_page():
                     elif new_pw != new_pw_check:
                         st.error("비밀번호가 일치하지 않습니다.")
                     else:
-                        # 유효성 검사를 통과하면 곧바로 계정을 만들지 않고,
-                        # 입력 내용을 임시 저장한 뒤 확인 모달을 띄운다.
                         st.session_state['pending_signup'] = {
                             "dept": new_dept.strip(),
                             "manager": new_manager.strip(),
@@ -1006,6 +1014,74 @@ def show_login_page():
 
     if st.session_state.get('show_signup_confirm') and st.session_state.get('pending_signup'):
         show_signup_confirm_dialog()
+
+
+# ==========================================
+# 3-1. 부서별 자동화 현황조사 폼 화면
+# ==========================================
+def show_survey_page():
+    user_id = st.session_state['user_id']
+    users_db = st.session_state['app_data'].get('users_db', {})
+    uinfo = users_db.get(user_id, {})
+
+    st.markdown("### 부서별 자동화 대상 업무 현황조사")
+    st.markdown("""
+    <div style='background-color: #FFF3CD; padding: 15px; border-radius: 8px; border: 1px solid #FFEEBA; margin-bottom: 20px; color: #856404;'>
+        <b>① 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
+        ※ 작성 관련 문의: 원격교육지원센터 임현기(내선5203, 또는 1:1 잔디)
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.form("survey_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            dept = st.text_input("부서명", value=uinfo.get('dept', ''))
+        with c2:
+            manager = st.text_input("담당자 성명", value=uinfo.get('manager', ''))
+
+        task_name = st.text_input("업무명", placeholder="예: 멀티스튜디오 예약관리")
+        media = st.text_input("관리 매체 (통합정보시스템, 별도 엑셀관리 등)", placeholder="예: 별도 엑셀대장 관리")
+
+        c3, c4 = st.columns(2)
+        with c3:
+            main_user = st.text_input("주 사용자", placeholder="예: 원격교육지원센터 담당직원, 각 학과 직원")
+        with c4:
+            freq = st.text_input("업무주기 (주당)", placeholder="예: 주 3회 이상")
+
+        c5, c6 = st.columns(2)
+        with c5:
+            time_spent = st.text_input("1회 소요시간", placeholder="예: 30분")
+        with c6:
+            linked_dept = st.text_input("연계 부서", placeholder="예: 각 학과")
+
+        improvement = st.text_area("개선 필요사항", placeholder="- 엑셀에 입력하는 과정에서 오타 발생\n- 수기입력에 행정력 소모 심함\n- 기존 이용내역에 대한 통계 등 누적자료에 대한 분석 어려움")
+
+        submitted = st.form_submit_button("현황조사 제출 완료하기 (제출 후 메인페이지 이동)", use_container_width=True, type="primary")
+
+        if submitted:
+            if not task_name.strip():
+                st.error("업무명은 필수 입력 항목입니다.")
+            else:
+                survey_data = {
+                    "부서명": dept,
+                    "담당자 성명": manager,
+                    "업무명": task_name,
+                    "관리 매체": media,
+                    "주 사용자": main_user,
+                    "업무주기": freq,
+                    "1회 소요시간": time_spent,
+                    "연계 부서": linked_dept,
+                    "개선 필요사항": improvement,
+                    "제출일": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
+                    "User_ID": user_id
+                }
+                st.session_state['app_data'].setdefault('survey', []).append(survey_data)
+                st.session_state['app_data']['users_db'][user_id]['survey_completed'] = True
+
+                save_data(st.session_state['app_data'])
+                if st.session_state.get('last_save_status') != "fail":
+                    st.success("현황조사가 제출되었습니다. 잠시 후 메인 화면으로 이동합니다.")
+                    st.rerun()
 
 
 # ==========================================
@@ -1602,7 +1678,8 @@ def show_main_page():
                     "담당자명": uinfo.get("manager", ""),
                     "비밀번호": uinfo.get("password", ""),
                     "권한": "관리자" if uinfo.get("role") == "admin" else "일반",
-                    "승인 여부": "승인됨" if uinfo.get("approved", True) else "대기중"
+                    "승인 여부": "승인됨" if uinfo.get("approved", True) else "대기중",
+                    "조사 제출": "완료" if uinfo.get("survey_completed", False) else "미제출"
                 })
             users_df = pd.DataFrame(users_rows)
             st.dataframe(users_df, use_container_width=True, hide_index=True)
@@ -1774,5 +1851,15 @@ if not st.session_state['logged_in']:
     st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
     show_login_page()
 else:
-    show_sidebar()
-    show_main_page()
+    user_id = st.session_state.get('user_id')
+    users_db = st.session_state['app_data'].get('users_db', {})
+    uinfo = users_db.get(user_id, {})
+    is_completed = uinfo.get('survey_completed', False)
+
+    # 현황조사를 제출하지 않은 유저는 메인 화면 대신 조사 폼을 보여줍니다
+    if not is_completed:
+        st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
+        show_survey_page()
+    else:
+        show_sidebar()
+        show_main_page()
