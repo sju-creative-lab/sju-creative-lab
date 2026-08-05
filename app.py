@@ -1840,7 +1840,7 @@ def show_main_page():
     if is_admin:
         with tab4:
             st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
-            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다. 구글 시트의 'survey' 탭과 연동됩니다.")
+            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
             
             survey_list = st.session_state['app_data'].get('survey', [])
             
