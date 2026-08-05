@@ -1807,8 +1807,8 @@ def show_main_page():
     # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
     if is_admin:
         with tab4:
-            st.markdown("### 📊 부서별 자동화 대상 업무 현황조사 제출 내역")
-            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다. 구글 시트의 'survey' 탭과 연동됩니다.")
+            st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
+            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
             
             survey_list = st.session_state['app_data'].get('survey', [])
             
@@ -1824,7 +1824,7 @@ def show_main_page():
                 csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
                 
                 st.download_button(
-                    label="📥 CSV 파일 다운로드 (엑셀 호환)",
+                    label="CSV 파일 다운로드 (엑셀 호환)",
                     data=csv_data,
                     file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
