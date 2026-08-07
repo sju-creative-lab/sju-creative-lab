@@ -9,6 +9,7 @@ import ast
 import base64
 import traceback
 import math
+import time
 import streamlit.components.v1 as components
 
 # ==========================================
@@ -902,7 +903,11 @@ def _render_signup_confirm_body():
             st.rerun()
     with c2:
         if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
-            ok = finalize_signup(pending)
+            # 로딩 애니메이션 추가
+            with st.spinner("계정을 안전하게 생성하고 있습니다. 잠시만 기다려주세요..."):
+                time.sleep(1.5)
+                ok = finalize_signup(pending)
+            
             st.session_state['pending_signup'] = None
             st.session_state['show_signup_confirm'] = False
             if ok:
@@ -1017,7 +1022,7 @@ def _render_survey_success_body():
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
         
-        # 확인 버튼 클릭 시 프로덕트 투어 플래그 활성화 (최초 1회 자동 실행)[cite: 1]
+        # 확인 버튼 클릭 시 프로덕트 투어 플래그 활성화 (최초 1회만 자동 실행)
         st.session_state['show_product_tour'] = True
         st.session_state['tour_step'] = 1
         
@@ -1081,23 +1086,26 @@ def show_survey_page():
             if not task_name.strip():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
-                survey_data = {
-                    "부서명": dept,
-                    "담당자 성명": manager,
-                    "업무명": task_name,
-                    "관리 매체": media,
-                    "주 사용자": main_user,
-                    "업무주기": freq,
-                    "1회 소요시간": time_spent,
-                    "연계 부서": linked_dept,
-                    "개선 필요사항": improvement,
-                    "제출일": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
-                    "User_ID": user_id
-                }
-                st.session_state['app_data'].setdefault('survey', []).append(survey_data)
-                st.session_state['app_data']['users_db'][user_id]['survey_completed'] = True
-
-                save_data(st.session_state['app_data'])
+                # 로딩 애니메이션 추가
+                with st.spinner("현황조사 데이터를 시스템에 기록하고 있습니다. 잠시만 기다려주세요..."):
+                    time.sleep(1.5)
+                    survey_data = {
+                        "부서명": dept,
+                        "담당자 성명": manager,
+                        "업무명": task_name,
+                        "관리 매체": media,
+                        "주 사용자": main_user,
+                        "업무주기": freq,
+                        "1회 소요시간": time_spent,
+                        "연계 부서": linked_dept,
+                        "개선 필요사항": improvement,
+                        "제출일": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
+                        "User_ID": user_id
+                    }
+                    st.session_state['app_data'].setdefault('survey', []).append(survey_data)
+                    st.session_state['app_data']['users_db'][user_id]['survey_completed'] = True
+    
+                    save_data(st.session_state['app_data'])
                 if st.session_state.get('last_save_status') != "fail":
                     st.session_state['show_survey_success'] = True
                     st.rerun()
@@ -1120,36 +1128,35 @@ def _render_product_tour_body():
 
     st.progress(step / 3.0)
 
-    if step == 1:
-        st.markdown("### 1. 대시보드 현황")
-        st.markdown("""
-            <div style='background-color: var(--muted); padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
-                <b>프로젝트 전체 현황을 한눈에!</b><br><br>
-                메인 화면의 <b>'대시보드 현황'</b> 탭에서는 등록된 산출물 개수, 참여 담당자, 부서별 타임라인 및 파이 차트를 통해 우리 대학의 AI/자동화 도입 현황을 직관적으로 파악할 수 있습니다.
-            </div>
-        """, unsafe_allow_html=True)
-    elif step == 2:
-        st.markdown("### 2. 산출물 커뮤니티 및 저장소")
-        st.markdown("""
-            <div style='background-color: var(--muted); padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
-                <b>개발 산출물을 공유하고 협업하세요!</b><br><br>
-                <b>'산출물 커뮤니티 및 저장소'</b> 탭으로 이동하면:<br>
-                - 직접 만든 자동화 스크립트나 산출물을 업로드하여 배포할 수 있습니다.<br>
-                - 다른 직원이 올린 산출물을 다운로드하고, '피드백'과 '이슈'를 남겨 함께 개선해 나갈 수 있습니다.
-            </div>
-        """, unsafe_allow_html=True)
-    elif step == 3:
-        st.markdown("### 3. 사이드바 메뉴 활용")
-        st.markdown("""
-            <div style='background-color: var(--muted); padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
-                <b>원하는 산출물을 빠르게 찾으세요!</b><br><br>
-                화면 좌측(모바일은 상단 메뉴)의 <b>사이드바 필터</b>를 활용해 보세요.<br>
-                특정 <b>부서별</b>로 정렬하거나, <b>검색어</b>를 입력해 수많은 프로젝트 중 내게 필요한 시스템을 즉시 찾아낼 수 있습니다.<br><br>
-                <i>* 우측 상단의 '이용 안내' 버튼을 누르시면 언제든 본 가이드를 다시 보실 수 있습니다.</i>
-            </div>
-        """, unsafe_allow_html=True)
+    img_bg = ""
+    title = ""
+    desc = ""
 
-    st.write("")
+    if step == 1:
+        img_bg = "linear-gradient(135deg, #0052FF, #4D7CFF)"
+        title = "1. 대시보드 현황"
+        desc = "프로젝트 전체 현황을 한눈에 파악하세요!<br><br>메인 화면의 <b>'대시보드 현황'</b> 탭에서는 등록된 산출물 개수, 참여 담당자, 부서별 타임라인 및 파이 차트를 통해 우리 대학의 시스템 자동화 도입 현황을 직관적으로 확인할 수 있습니다."
+    elif step == 2:
+        img_bg = "linear-gradient(135deg, #4D7CFF, #7fa4ff)"
+        title = "2. 산출물 커뮤니티 및 저장소"
+        desc = "개발 산출물을 공유하고 자유롭게 협업하세요!<br><br><b>'산출물 커뮤니티 및 저장소'</b> 탭으로 이동하면:<br>- 직접 만든 자동화 스크립트나 산출물을 업로드하여 배포할 수 있습니다.<br>- 다른 직원이 올린 산출물을 다운로드하고, '피드백'과 '이슈'를 남겨 함께 개선해 나갈 수 있습니다."
+    elif step == 3:
+        img_bg = "linear-gradient(135deg, #1e293b, #64748B)"
+        title = "3. 사이드바 메뉴 활용"
+        desc = "원하는 산출물을 빠르게 찾으세요!<br><br>화면 좌측(모바일은 상단 메뉴)의 <b>사이드바 필터</b>를 활용해 보세요.<br>특정 <b>부서별</b>로 정렬하거나, <b>검색어</b>를 입력해 수많은 프로젝트 중 내게 필요한 시스템을 즉시 찾아낼 수 있습니다.<br><br><span style='font-size:12px; color:var(--muted-foreground);'>* 우측 상단의 '이용 안내' 버튼을 누르시면 언제든 본 가이드를 다시 보실 수 있습니다.</span>"
+
+    st.markdown(f"""
+        <div style='text-align: center; padding: 10px 0 20px 0;'>
+            <div style='background: {img_bg}; height: 160px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);'>
+                <h2 style='color: white; margin: 0; font-weight: 800; font-family: var(--font-display);'>Step {step}</h2>
+            </div>
+            <h3 style='margin-bottom: 12px; color: var(--foreground); font-weight: 700;'>{title}</h3>
+            <p style='color: var(--muted-foreground); font-size: 14px; line-height: 1.6; text-align: left; padding: 0 10px;'>
+                {desc}
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
         if step > 1:
@@ -1356,7 +1363,6 @@ def render_department_timeline():
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
-    # 플래그 활성화 시 투어 다이얼로그 호출
     if st.session_state.get('show_product_tour', False):
         show_product_tour_dialog()
 
@@ -1379,7 +1385,6 @@ def show_main_page():
         st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
-        # 우측 상단 이용 안내(투어) 버튼 포함
         r0, r1, r2, r3, r4 = st.columns([1.2, 1, 1, 1, 1.5])
         with r0:
             if st.button("이용 안내", use_container_width=True):
@@ -1923,7 +1928,7 @@ def show_main_page():
     if is_admin:
         with tab4:
             st.markdown("### 부서별 자동화 대상 업무 현황조사 제출 내역")
-            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
+            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다. 구글 시트의 'survey' 탭과 연동됩니다.")
             
             survey_list = st.session_state['app_data'].get('survey', [])
             
@@ -1939,7 +1944,7 @@ def show_main_page():
                 csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
                 
                 st.download_button(
-                    label="CSV 파일 다운로드",
+                    label="CSV 파일 다운로드 (엑셀 호환)",
                     data=csv_data,
                     file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
