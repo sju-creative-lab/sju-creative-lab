@@ -413,9 +413,14 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 
-# 세션 초기화 (로그인 상태)
+# 새로고침 방지를 위한 세션 초기화 로직 (URL Query Parameters 활용)
 if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
+    if "uid" in st.query_params and st.query_params["uid"] in st.session_state.get('app_data', {}).get('users_db', {}):
+        st.session_state['logged_in'] = True
+        st.session_state['user_id'] = st.query_params["uid"]
+        st.session_state['last_activity'] = now_kst()
+    else:
+        st.session_state['logged_in'] = False
 
 if 'filter_reset_counter' not in st.session_state:
     st.session_state['filter_reset_counter'] = 0
@@ -971,7 +976,8 @@ def show_login_page():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
                         st.session_state['last_activity'] = now_kst()
-                        # URL 기반 자동 로그인 로직 제거 (보안 강화 및 로그아웃 유지)
+                        # URL 기반 로그인 복구: 새로고침 시 강제 로그아웃 방지
+                        st.query_params["uid"] = user_id
                         st.rerun()
 
             with tab_signup:
@@ -1283,13 +1289,15 @@ def render_department_timeline():
 # ==========================================
 def show_main_page():
     now = now_kst()
-    # 타임아웃 로그아웃 시 세션 정보 파기
+    # 타임아웃 로그아웃 시 세션 정보 파기 및 URL 파라미터 초기화
     if 'last_activity' in st.session_state and now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
         keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
         for k in keys_to_clear:
             if k in st.session_state:
                 del st.session_state[k]
         st.session_state['logged_in'] = False
+        if "uid" in st.query_params:
+            del st.query_params["uid"]
         st.rerun()
 
     col_title, col_ui = st.columns([5, 5])
@@ -1311,6 +1319,8 @@ def show_main_page():
                     if k in st.session_state:
                         del st.session_state[k]
                 st.session_state['logged_in'] = False
+                if "uid" in st.query_params:
+                    del st.query_params["uid"]
                 st.rerun()
         with r2:
             st.markdown(f"<div id='realtime-timer-badge'><span id='realtime-timer'>--:--</span></div>", unsafe_allow_html=True)
