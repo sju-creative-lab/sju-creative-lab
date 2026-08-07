@@ -917,7 +917,7 @@ def _render_signup_confirm_body():
         st.rerun()
 
     if btn_done:
-        with st.spinner("계정 생성하고 있어요. 조금만 기다려주세요"):
+        with st.spinner("계정을 생성하고 있어요. 조금만 기다려주세요"):
             ok = finalize_signup(pending)
         st.session_state['pending_signup'] = None
         st.session_state['show_signup_confirm'] = False
@@ -1059,7 +1059,7 @@ def show_survey_page():
     st.markdown("### 부서별 자동화 대상 업무 현황조사")
     st.markdown("""
     <div style='background-color: #FFF3CD; padding: 15px; border-radius: 8px; border: 1px solid #FFEEBA; margin-bottom: 20px; color: #856404;'>
-        <b>① 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
+        <b>단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
         ※ 작성 관련 문의: 원격교육지원센터 임현기(내선5203, 또는 1:1 잔디)
     </div>
     """, unsafe_allow_html=True)
@@ -1095,7 +1095,7 @@ def show_survey_page():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
                 # 제출 버튼 클릭 시 애니메이션 추가
-                with st.spinner("입력하신 현황 조사를 제출하고 있어요. 조금만 기다려주세요"):
+                with st.spinner("입력하신 현황 조사 양식을 제출하고 있어요. 조금만 기다려주세요"):
                     survey_data = {
                         "부서명": dept,
                         "담당자 성명": manager,
