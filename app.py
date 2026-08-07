@@ -917,7 +917,7 @@ def _render_signup_confirm_body():
         st.rerun()
 
     if btn_done:
-        with st.spinner("계정을 생성하고 있어요. 조금만 기다려주세요"):
+        with st.spinner("계정을 생성하고 있어요. 조금만 기다려주세요!"):
             ok = finalize_signup(pending)
         st.session_state['pending_signup'] = None
         st.session_state['show_signup_confirm'] = False
@@ -1032,7 +1032,7 @@ def show_login_page():
 def _render_survey_success_body():
     st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
-    if st.button("확인하였습니다", use_container_width=True, type="primary"):
+    if st.button("확인하였습니다.", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
         st.rerun()
 
@@ -1095,7 +1095,7 @@ def show_survey_page():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
                 # 제출 버튼 클릭 시 애니메이션 추가
-                with st.spinner("입력하신 현황 조사 양식을 제출하고 있어요. 조금만 기다려주세요"):
+                with st.spinner("입력하신 현황 조사 양식을 제출하고 있어요. 조금만 기다려주세요!"):
                     survey_data = {
                         "부서명": dept,
                         "담당자 성명": manager,
