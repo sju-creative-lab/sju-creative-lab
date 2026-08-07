@@ -9,7 +9,6 @@ import ast
 import base64
 import traceback
 import math
-import time
 import streamlit.components.v1 as components
 
 # ==========================================
@@ -137,13 +136,13 @@ def load_data():
         _log("streamlit_gsheets 패키지 import 성공")
 
         if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-            _log("st.secrets에 [connections.gsheets] 설정 발견 -> Google Sheets 모드로 전환 시도")
+            _log("st.secrets에 [connections.gsheets] 설정 발견 → Google Sheets 모드로 전환 시도")
             st.session_state['db_mode'] = "Google Sheets"
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 _log("st.connection 객체 생성 성공")
             except Exception as e_conn:
-                _log(f"[오류] st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn, 'connection_create')}", "error")
+                _log(f"❌ st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn, 'connection_create')}", "error")
                 conn = None
 
             if conn is not None:
@@ -193,9 +192,9 @@ def load_data():
                         local_data['users_db'] = merged_users
                         _log(f"Users 병합 완료: 총 {len(merged_users)}건 (승인 절차 폐지로 전원 승인 처리)")
                     else:
-                        _log("[안내] Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
+                        _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
                 except Exception as e_users:
-                    _log(f"[오류] Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
+                    _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
 
                 try:
                     repo_df = conn.read(worksheet="Repository", ttl=0)
@@ -240,7 +239,7 @@ def load_data():
                     else:
                         local_data['repository'] = []
                 except Exception as e_repo:
-                    _log(f"[오류] Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
+                    _log(f"❌ Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
 
                 try:
                     cat_df = conn.read(worksheet="Categories", ttl=0)
@@ -262,7 +261,7 @@ def load_data():
                         local_data['survey'] = []
                 except Exception as e_sv:
                     local_data['survey'] = local_data.get('survey', [])
-                    _log(f"[안내] survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
+                    _log(f"ℹ️ survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
 
                 try:
                     timeline_df = conn.read(worksheet="TimelineLog", ttl=0)
@@ -271,9 +270,9 @@ def load_data():
                 except Exception as e_tl:
                     pass
         else:
-            _log("st.secrets에 [connections.gsheets] 설정이 없습니다 -> Local File 모드로 동작합니다.")
+            _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
     except Exception as e:
-        _log(f"[오류] Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e, 'init')}", "error")
+        _log(f"❌ Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e, 'init')}", "error")
 
     return local_data
 
@@ -401,10 +400,10 @@ def save_data(data):
             full_tb = traceback.format_exc()
             st.session_state.setdefault('gsheets_full_traceback', []).append(("save_data", full_tb))
             err_txt = f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'}"
-            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"[오류] save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
+            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
             if core_save_failed:
                 st.session_state['last_save_status'] = "fail"
-                st.error(f"[주의] 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
+                st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
             else:
                 st.session_state['last_save_status'] = "success"
     else:
@@ -414,6 +413,7 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 
+# 세션 초기화 (로그인 상태)
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
@@ -537,133 +537,7 @@ def inject_timer_js():
 
 
 # ==========================================
-# 2-1. 완벽한 샌드박스 우회형 프로덕트 투어 실행기 (Driver.js)
-# ==========================================
-def run_product_tour():
-    js_code = """
-    (function() {
-        if (!window.driverInjected) {
-            window.driverInjected = true;
-            var link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
-            document.head.appendChild(link);
-            
-            var style = document.createElement('style');
-            style.innerHTML = '.driver-popover { z-index: 999999 !important; } .driver-overlay { z-index: 999998 !important; }';
-            document.head.appendChild(style);
-            
-            var script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
-            script.onload = startTour;
-            document.head.appendChild(script);
-        } else {
-            startTour();
-        }
-
-        function getTarget(id) {
-            var el = document.getElementById(id);
-            if(!el) return document.body;
-            var wrapper = el.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || el.closest('div[data-testid="stExpander"]') || el.parentElement;
-            return wrapper || el;
-        }
-
-        function startTour() {
-            if (!window.driver) { setTimeout(startTour, 200); return; }
-            const driver = window.driver.js.driver;
-            if (window.currentTour) window.currentTour.destroy();
-            
-            window.currentTour = driver({
-                showProgress: true,
-                allowClose: false,
-                nextBtnText: '다음',
-                prevBtnText: '이전',
-                doneBtnText: '투어 종료',
-                steps: [
-                    { 
-                        element: '[data-testid="stSidebar"]', 
-                        popover: { 
-                            title: '1. 사이드바 검색 및 필터', 
-                            description: '원하는 부서나 검색어를 입력하여 수많은 산출물 중 내게 필요한 항목을 빠르게 찾아볼 수 있습니다.', 
-                            side: 'right', align: 'start' 
-                        } 
-                    },
-                    { 
-                        element: () => getTarget('tour-metrics'), 
-                        popover: { 
-                            title: '2. 대시보드 현황', 
-                            description: '등록된 전체 산출물 개수, 참여자 수, 누적 피드백 등 시스템 자동화 도입 현황을 직관적으로 확인합니다.', 
-                            side: 'bottom', align: 'center' 
-                        } 
-                    },
-                    { 
-                        element: () => getTarget('tour-timeline'), 
-                        popover: { 
-                            title: '3. 부서별 제작 타임라인', 
-                            description: '산출물 등록부터 완료 처리까지의 평균 소요 시간 및 전체적인 업무 진행 타임라인을 파악합니다.', 
-                            side: 'top', align: 'center' 
-                        } 
-                    },
-                    { 
-                        element: 'div[data-baseweb="tab-list"]', 
-                        popover: { 
-                            title: '4. 탭 전환 기능', 
-                            description: '산출물을 직접 등록하고 조회할 수 있는 커뮤니티 공간으로 넘어갑니다. 다음을 눌러주세요.', 
-                            side: 'bottom', align: 'center', 
-                            onNextClick: () => {
-                                const tabs = Array.from(document.querySelectorAll('button[data-baseweb="tab"]'));
-                                const t = tabs.find(x => x.innerText.includes('커뮤니티'));
-                                if (t) t.click();
-                                setTimeout(() => { window.currentTour.moveNext(); }, 800);
-                            }
-                        }
-                    },
-                    { 
-                        element: () => {
-                            const m = document.getElementById('tour-upload');
-                            if(m) {
-                                const ex = m.closest('div[data-testid="stExpander"]');
-                                if(ex) {
-                                    const sum = ex.querySelector('summary');
-                                    if(sum && sum.getAttribute('aria-expanded') === 'false') sum.click();
-                                    return ex;
-                                }
-                            }
-                            return document.body;
-                        }, 
-                        popover: { 
-                            title: '5. 산출물 업로드', 
-                            description: '이 영역을 클릭하여 직접 개발한 자동화 스크립트나 파일을 등록하고 부서 간에 공유할 수 있습니다.', 
-                            side: 'bottom', align: 'center', 
-                            onPrevClick: () => {
-                                const tabs = Array.from(document.querySelectorAll('button[data-baseweb="tab"]'));
-                                const t = tabs.find(x => x.innerText.includes('대시보드'));
-                                if (t) t.click();
-                                setTimeout(() => { window.currentTour.movePrevious(); }, 800);
-                            }
-                        }
-                    },
-                    { 
-                        element: () => getTarget('tour-repo'), 
-                        popover: { 
-                            title: '6. 커뮤니티 저장소 목록', 
-                            description: '동료가 올린 산출물을 다운로드하여 확인하고 의견을 남길 수 있습니다. 우측 상단 이용 안내 버튼을 눌러 언제든 본 안내를 다시 확인하세요.', 
-                            side: 'top', align: 'center' 
-                        } 
-                    }
-                ]
-            });
-            window.currentTour.drive();
-        }
-    })();
-    """
-    # Streamlit 마크다운(base64 이미지 렌더링 우회 기법)을 활용하여 최상위 DOM에 직접 JS 주입
-    b64_js = base64.b64encode(js_code.encode('utf-8')).decode('utf-8')
-    st.markdown(f'<img src="x" style="display:none;" onerror="eval(atob(\'{b64_js}\'))">', unsafe_allow_html=True)
-
-
-# ==========================================
-# 2-3. 디자인 토큰 & 전역 스타일
+# 2-1. 디자인 토큰 & 전역 스타일
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -1028,10 +902,7 @@ def _render_signup_confirm_body():
             st.rerun()
     with c2:
         if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
-            with st.spinner("계정을 안전하게 생성하고 있습니다. 잠시만 기다려주세요..."):
-                time.sleep(1.5)
-                ok = finalize_signup(pending)
-            
+            ok = finalize_signup(pending)
             st.session_state['pending_signup'] = None
             st.session_state['show_signup_confirm'] = False
             if ok:
@@ -1100,6 +971,7 @@ def show_login_page():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
                         st.session_state['last_activity'] = now_kst()
+                        # URL 기반 자동 로그인 로직 제거 (보안 강화 및 로그아웃 유지)
                         st.rerun()
 
             with tab_signup:
@@ -1141,11 +1013,10 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 미팅 일정을 메신저를 통해 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
-        st.session_state['tour_trigger'] = True
         st.rerun()
 
 if hasattr(st, "dialog"):
@@ -1163,7 +1034,6 @@ else:
             st.markdown("#### 제출 완료 안내")
             _render_survey_success_body()
 
-
 def show_survey_page():
     user_id = st.session_state['user_id']
     users_db = st.session_state['app_data'].get('users_db', {})
@@ -1172,8 +1042,8 @@ def show_survey_page():
     st.markdown("### 부서별 자동화 대상 업무 현황조사")
     st.markdown("""
     <div style='background-color: #FFF3CD; padding: 15px; border-radius: 8px; border: 1px solid #FFEEBA; margin-bottom: 20px; color: #856404;'>
-        <b>1. 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
-        ※ 작성 관련 문의: 원격교육지원센터
+        <b>① 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
+        ※ 작성 관련 문의: 원격교육지원센터 임현기(내선5203, 또는 1:1 잔디)
     </div>
     """, unsafe_allow_html=True)
     
@@ -1189,7 +1059,7 @@ def show_survey_page():
 
         c3, c4 = st.columns(2)
         with c3:
-            main_user = st.text_input("주 사용자", placeholder="예: 담당직원 및 각 학과 조교")
+            main_user = st.text_input("주 사용자", placeholder="예: 원격교육지원센터 담당직원, 각 학과 직원")
         with c4:
             freq = st.text_input("업무주기 (주당)", placeholder="예: 주 3회 이상")
 
@@ -1199,7 +1069,7 @@ def show_survey_page():
         with c6:
             linked_dept = st.text_input("연계 부서", placeholder="예: 각 학과")
 
-        improvement = st.text_area("개선 필요사항", placeholder="- 엑셀에 입력하는 과정에서 오타 발생\n- 수기입력에 행정력 소모 심함\n- 기존 이용내역에 대한 통계 등 누적자료 분석 어려움")
+        improvement = st.text_area("개선 필요사항", placeholder="- 엑셀에 입력하는 과정에서 오타 발생\n- 수기입력에 행정력 소모 심함\n- 기존 이용내역에 대한 통계 등 누적자료에 대한 분석 어려움")
 
         submitted = st.form_submit_button("현황조사 제출 완료하기", use_container_width=True, type="primary")
 
@@ -1207,34 +1077,34 @@ def show_survey_page():
             if not task_name.strip():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
-                with st.spinner("현황조사 데이터를 시스템에 기록하고 있습니다. 잠시만 기다려주세요..."):
-                    time.sleep(1.5)
-                    survey_data = {
-                        "부서명": dept,
-                        "담당자 성명": manager,
-                        "업무명": task_name,
-                        "관리 매체": media,
-                        "주 사용자": main_user,
-                        "업무주기": freq,
-                        "1회 소요시간": time_spent,
-                        "연계 부서": linked_dept,
-                        "개선 필요사항": improvement,
-                        "제출일": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
-                        "User_ID": user_id
-                    }
-                    st.session_state['app_data'].setdefault('survey', []).append(survey_data)
-                    st.session_state['app_data']['users_db'][user_id]['survey_completed'] = True
-    
-                    save_data(st.session_state['app_data'])
+                survey_data = {
+                    "부서명": dept,
+                    "담당자 성명": manager,
+                    "업무명": task_name,
+                    "관리 매체": media,
+                    "주 사용자": main_user,
+                    "업무주기": freq,
+                    "1회 소요시간": time_spent,
+                    "연계 부서": linked_dept,
+                    "개선 필요사항": improvement,
+                    "제출일": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
+                    "User_ID": user_id
+                }
+                st.session_state['app_data'].setdefault('survey', []).append(survey_data)
+                st.session_state['app_data']['users_db'][user_id]['survey_completed'] = True
+
+                save_data(st.session_state['app_data'])
                 if st.session_state.get('last_save_status') != "fail":
                     st.session_state['show_survey_success'] = True
                     st.rerun()
 
+    # 제출이 완료되어 플래그가 세워졌을 경우 팝업 호출
     if st.session_state.get('show_survey_success', False):
         show_survey_success_dialog()
         
     st.write("<br><br>", unsafe_allow_html=True)
     
+    # 폼 바로 아래 (가운데 하단)에 로고 작게 배치
     _, bottom_logo_col, _ = st.columns([4, 1.5, 4])
     with bottom_logo_col:
         safe_show_logo(use_container_width=True)
@@ -1405,7 +1275,7 @@ def render_department_timeline():
         avg_df["소요시간(시간)"] = avg_df["소요시간(시간)"].round(1)
         st.dataframe(avg_df, use_container_width=True, hide_index=True)
     else:
-        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 커뮤니티 저장소 목록에서 산출물을 완료 처리해 보세요.")
+        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 커뮤니티 저장소 목록에서 산출물을 '완료 처리'해 보세요.")
 
 
 # ==========================================
@@ -1413,8 +1283,9 @@ def render_department_timeline():
 # ==========================================
 def show_main_page():
     now = now_kst()
+    # 타임아웃 로그아웃 시 세션 정보 파기
     if 'last_activity' in st.session_state and now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
-        keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup', 'tour_trigger']
+        keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
         for k in keys_to_clear:
             if k in st.session_state:
                 del st.session_state[k]
@@ -1431,14 +1302,11 @@ def show_main_page():
         st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
-        r0, r1, r2, r3, r4 = st.columns([1.2, 1, 1, 1, 1.5])
-        with r0:
-            if st.button("이용 안내", use_container_width=True):
-                st.session_state['tour_trigger'] = True
-                st.rerun()
+        r1, r2, r3, r4 = st.columns([1, 1, 1, 1.5])
         with r1:
             if st.button("로그아웃", use_container_width=True):
-                keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup', 'tour_trigger']
+                # 로그아웃 버튼 클릭 시 핵심 세션 정보를 완벽히 파기하여 재로그인 유도
+                keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
                 for k in keys_to_clear:
                     if k in st.session_state:
                         del st.session_state[k]
@@ -1476,7 +1344,6 @@ def show_main_page():
 
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        st.markdown("<div id='tour-metrics' style='height:0px; width:0px;'></div>", unsafe_allow_html=True)
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"<div class='metric-card'><div class='label'>전체 프로젝트</div><div class='value'>{total_projects}</div><div class='sub'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
@@ -1547,7 +1414,7 @@ def show_main_page():
                     st.info("등록된 프로젝트가 없어 부서 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
-        st.markdown("<div id='tour-timeline' style='height:0px; width:0px;'></div>##### 부서별 제작 타임라인", unsafe_allow_html=True)
+        st.markdown("##### 부서별 제작 타임라인")
         st.caption("등록일부터 완료 처리일까지의 제작 소요 기간을 보여줍니다. (저장소에서 삭제된 산출물은 집계에서 제외됩니다)")
         with st.container(border=True):
             render_department_timeline()
@@ -1562,7 +1429,7 @@ def show_main_page():
             if repo_data_all:
                 st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
             else:
-                st.info("등록된 산출물 프로젝트가 없습니다. 산출물 커뮤니티 및 저장소 탭에서 등록해 주세요.")
+                st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
         else:
             current_dash_page = render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash_bottom')
             start_idx = (current_dash_page - 1) * PAGE_SIZE
@@ -1589,7 +1456,6 @@ def show_main_page():
         st.write("<br>", unsafe_allow_html=True)
 
         with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
-            st.markdown("<div id='tour-upload'></div>", unsafe_allow_html=True)
             my_dept = get_user_dept(current_user_id)
             st.info(f"업로드 시 부서는 회원가입 시 등록하신 **[{my_dept}]** 으로 자동 지정됩니다.")
             with st.form("upload_form", clear_on_submit=True):
@@ -1625,6 +1491,7 @@ def show_main_page():
                             save_data(st.session_state['app_data'])
                         if st.session_state.get('last_save_status') != "fail":
                             st.success("성공적으로 배포되었습니다.")
+                            st.balloons()
                             st.rerun()
                     else:
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
@@ -1641,7 +1508,7 @@ def show_main_page():
 
         h1, h2 = st.columns([4, 2])
         with h1:
-            st.markdown(f"<div id='tour-repo' style='height:0px; width:0px;'></div>#### 커뮤니티 저장소 목록{filter_desc}", unsafe_allow_html=True)
+            st.markdown(f"#### 커뮤니티 저장소 목록{filter_desc}")
         with h2:
             st.markdown(f"<div style='text-align:right; padding-top:8px; color:var(--muted-foreground); font-size:13px;'>정렬: {st.session_state.get(_sort_key, '최근 활동순')} · 총 {len(filtered_repo)}건</div>", unsafe_allow_html=True)
 
@@ -1973,7 +1840,7 @@ def show_main_page():
     # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
     if is_admin:
         with tab4:
-            st.markdown("### 부서별 자동화 대상 업무 현황조사 제출 내역")
+            st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
             st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
             
             survey_list = st.session_state['app_data'].get('survey', [])
@@ -1996,92 +1863,6 @@ def show_main_page():
                     mime="text/csv",
                     use_container_width=True
                 )
-
-    # ----------------------------------------------------
-    # 실제 화면 요소 하이라이팅 투어 구동 스크립트 (iframe 우회 및 base64 디코딩 방식)
-    # ----------------------------------------------------
-    def run_product_tour():
-        js_code = """
-        (function() {
-            if (!window.driverInjected) {
-                window.driverInjected = true;
-                var link = document.createElement('link');
-                link.rel = 'stylesheet';
-                link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
-                document.head.appendChild(link);
-                
-                var style = document.createElement('style');
-                style.innerHTML = '.driver-popover { z-index: 999999 !important; } .driver-overlay { z-index: 999998 !important; }';
-                document.head.appendChild(style);
-                
-                var script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
-                script.onload = startTour;
-                document.head.appendChild(script);
-            } else {
-                startTour();
-            }
-
-            function getTarget(id) {
-                var el = document.getElementById(id);
-                if(!el) return document.body;
-                var wrapper = el.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || el.closest('div[data-testid="stExpander"]') || el.parentElement;
-                return wrapper || el;
-            }
-
-            function startTour() {
-                if (!window.driver) { setTimeout(startTour, 200); return; }
-                const driver = window.driver.js.driver;
-                if (window.currentTour) window.currentTour.destroy();
-                
-                window.currentTour = driver({
-                    showProgress: true,
-                    allowClose: false,
-                    nextBtnText: '다음',
-                    prevBtnText: '이전',
-                    doneBtnText: '투어 종료',
-                    steps: [
-                        { element: '[data-testid="stSidebar"]', popover: { title: '1. 사이드바 검색 및 필터', description: '원하는 부서나 검색어를 입력하여 산출물을 빠르게 찾아볼 수 있습니다.', side: 'right', align: 'start' } },
-                        { element: () => getTarget('tour-metrics'), popover: { title: '2. 대시보드 현황', description: '전체 산출물 개수, 참여자 수 등 시스템 도입 현황을 직관적으로 확인합니다.', side: 'bottom', align: 'center' } },
-                        { element: () => getTarget('tour-timeline'), popover: { title: '3. 부서별 제작 타임라인', description: '산출물 등록부터 완료까지의 소요 시간 및 타임라인을 파악합니다.', side: 'top', align: 'center' } },
-                        { element: 'div[data-baseweb="tab-list"]', popover: { title: '4. 탭 전환', description: '산출물을 직접 등록하고 조회할 수 있는 커뮤니티 탭으로 이동합니다. 다음을 눌러주세요.', side: 'bottom', align: 'center', onNextClick: () => {
-                            const tabs = Array.from(document.querySelectorAll('button[data-baseweb="tab"]'));
-                            const t = tabs.find(x => x.innerText.includes('커뮤니티'));
-                            if (t) t.click();
-                            setTimeout(() => { window.currentTour.moveNext(); }, 800);
-                        }}},
-                        { element: () => {
-                            const m = document.getElementById('tour-upload');
-                            if(m) {
-                                const ex = m.closest('div[data-testid="stExpander"]');
-                                if(ex) {
-                                    const sum = ex.querySelector('summary');
-                                    if(sum && sum.getAttribute('aria-expanded') === 'false') sum.click();
-                                    return ex;
-                                }
-                            }
-                            return document.body;
-                        }, popover: { title: '5. 산출물 업로드', description: '이 영역에서 직접 개발한 자동화 스크립트나 파일을 등록하여 공유할 수 있습니다.', side: 'bottom', align: 'center', onPrevClick: () => {
-                            const tabs = Array.from(document.querySelectorAll('button[data-baseweb="tab"]'));
-                            const t = tabs.find(x => x.innerText.includes('대시보드'));
-                            if (t) t.click();
-                            setTimeout(() => { window.currentTour.movePrevious(); }, 800);
-                        }}},
-                        { element: () => getTarget('tour-repo'), popover: { title: '6. 커뮤니티 저장소 목록', description: '동료가 올린 산출물을 확인하고 의견을 남길 수 있습니다. 우측 상단 이용 안내 버튼을 눌러 언제든 다시 확인하세요.', side: 'top', align: 'center' } }
-                    ]
-                });
-                window.currentTour.drive();
-            }
-        })();
-        """
-        # Streamlit 마크다운(base64 이미지 렌더링 우회 기법)을 활용하여 최상위 DOM에 직접 JS 주입
-        b64_js = base64.b64encode(js_code.encode('utf-8')).decode('utf-8')
-        st.markdown(f'<img src="x" style="display:none;" onerror="eval(atob(\'{b64_js}\'))">', unsafe_allow_html=True)
-
-    # 렌더링된 트리거가 있을 경우에만 실행
-    if st.session_state.get('tour_trigger', False):
-        run_product_tour()
-        st.session_state['tour_trigger'] = False
 
 
 # ==========================================
@@ -2136,6 +1917,7 @@ else:
     uinfo = users_db.get(user_id, {})
     is_completed = uinfo.get('survey_completed', False)
 
+    # 안내 팝업이 띄워져야 하는 플래그 상태거나 현황조사가 제출되지 않은 경우
     if st.session_state.get('show_survey_success', False):
         st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
         show_survey_page()
