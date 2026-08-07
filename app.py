@@ -875,6 +875,11 @@ def inject_design_system():
         background: rgba(0,82,255,0.08); padding: 2px 8px; border-radius: 999px;
         border: 1px solid rgba(0,82,255,0.2); white-space: nowrap;
     }
+    
+    /* 추가: Spinner(로딩 애니메이션) 텍스트 줄바꿈 방지 */
+    div[data-testid="stSpinner"] p {
+        white-space: nowrap !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -907,7 +912,9 @@ def _render_signup_confirm_body():
             st.rerun()
     with c2:
         if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
-            ok = finalize_signup(pending)
+            # 완료 버튼 클릭 시 애니메이션 추가
+            with st.spinner("계정 생성하고 있어요. 조금만 기다려주세요"):
+                ok = finalize_signup(pending)
             st.session_state['pending_signup'] = None
             st.session_state['show_signup_confirm'] = False
             if ok:
@@ -1083,23 +1090,25 @@ def show_survey_page():
             if not task_name.strip():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
-                survey_data = {
-                    "부서명": dept,
-                    "담당자 성명": manager,
-                    "업무명": task_name,
-                    "관리 매체": media,
-                    "주 사용자": main_user,
-                    "업무주기": freq,
-                    "1회 소요시간": time_spent,
-                    "연계 부서": linked_dept,
-                    "개선 필요사항": improvement,
-                    "제출일": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
-                    "User_ID": user_id
-                }
-                st.session_state['app_data'].setdefault('survey', []).append(survey_data)
-                st.session_state['app_data']['users_db'][user_id]['survey_completed'] = True
+                # 제출 버튼 클릭 시 애니메이션 추가
+                with st.spinner("입력하신 현황 조사를 제출하고 있어요. 조금만 기다려주세요"):
+                    survey_data = {
+                        "부서명": dept,
+                        "담당자 성명": manager,
+                        "업무명": task_name,
+                        "관리 매체": media,
+                        "주 사용자": main_user,
+                        "업무주기": freq,
+                        "1회 소요시간": time_spent,
+                        "연계 부서": linked_dept,
+                        "개선 필요사항": improvement,
+                        "제출일": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
+                        "User_ID": user_id
+                    }
+                    st.session_state['app_data'].setdefault('survey', []).append(survey_data)
+                    st.session_state['app_data']['users_db'][user_id]['survey_completed'] = True
 
-                save_data(st.session_state['app_data'])
+                    save_data(st.session_state['app_data'])
                 if st.session_state.get('last_save_status') != "fail":
                     st.session_state['show_survey_success'] = True
                     st.rerun()
