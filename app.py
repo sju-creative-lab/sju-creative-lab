@@ -414,7 +414,6 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 
-# 세션 초기화 (로그인 상태)
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
@@ -538,7 +537,7 @@ def inject_timer_js():
 
 
 # ==========================================
-# 인터랙티브 프로덕트 투어 스크립트 (Driver.js)
+# 인터랙티브 화면 하이라이팅 투어 스크립트 (Driver.js)
 # ==========================================
 def run_product_tour():
     components.html("""
@@ -554,86 +553,104 @@ def run_product_tour():
     }
 
     function startTour() {
-        if (!window.parent.driver) return setTimeout(startTour, 200);
+        if (!window.parent.driver) {
+            setTimeout(startTour, 200);
+            return;
+        }
         
         const driver = window.parent.driver.js.driver;
-        const getElByText = (selector, text) => Array.from(parentDoc.querySelectorAll(selector)).find(el => el.innerText.includes(text));
 
-        // 각 투어 스텝 대상 요소를 선언합니다.
-        const els = {
-            sidebar: parentDoc.querySelector('[data-testid="stSidebar"]'),
-            metrics: parentDoc.querySelector('div[data-testid="stHorizontalBlock"]:has(.metric-card)'),
-            chart: parentDoc.querySelector('#tour-chart-1')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
-            timeline: parentDoc.querySelector('#tour-timeline')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
-            tabs: parentDoc.querySelector('div[data-baseweb="tab-list"]'),
-            upload: parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'),
-            repo: parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || parentDoc.querySelector('#tour-repo-list')?.parentElement
+        // 안전하게 요소를 찾는 헬퍼 함수
+        const getEl = (id) => {
+            const el = parentDoc.getElementById(id);
+            if (el) {
+                // stExpander 또는 stVerticalBlock 등 주요 컨테이너를 타겟팅
+                const wrapper = el.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || el.closest('div[data-testid="stExpander"]') || el.parentElement;
+                return wrapper;
+            }
+            return null;
         };
 
-        const driverObj = driver({
-          showProgress: true,
-          nextBtnText: '다음',
-          prevBtnText: '이전',
-          doneBtnText: '투어 종료',
-          allowClose: false,
-          steps: [
-            { 
-                element: els.sidebar, 
-                popover: { title: '1. 사이드바 검색 및 필터', description: '원하는 산출물을 부서별로 필터링하거나 검색어를 통해 빠르게 찾아볼 수 있습니다.', side: 'right', align: 'start' } 
-            },
-            { 
-                element: els.metrics, 
-                popover: { title: '2. 대시보드 요약 지표', description: '전체 프로젝트 수, 누적 피드백, 진행 중인 이슈 등 주요 현황을 한눈에 파악합니다.', side: 'bottom', align: 'start' } 
-            },
-            { 
-                element: els.chart, 
-                popover: { title: '3. 활동 현황 및 프로젝트 분포', description: '최근 등록된 산출물 추이와 부서별 프로젝트 분포를 시각적 차트로 확인할 수 있습니다.', side: 'top', align: 'center' } 
-            },
-            { 
-                element: els.timeline, 
-                popover: { title: '4. 부서별 제작 타임라인', description: '산출물 등록부터 완료 처리까지의 평균 소요 시간 및 타임라인을 확인합니다.', side: 'top', align: 'center' } 
-            },
-            { 
-                element: els.tabs, 
-                popover: { 
-                    title: '5. 커뮤니티 탭 이동', 
-                    description: '산출물을 직접 업로드하고 피드백을 남길 수 있는 커뮤니티 탭으로 자동 이동합니다.', 
-                    side: 'bottom', align: 'center',
-                    onNextClick: () => {
-                        const tab = getElByText('button[data-baseweb="tab"]', '산출물 커뮤니티 및 저장소');
-                        if (tab) tab.click();
-                        setTimeout(() => driverObj.moveNext(), 800);
+        const d = driver({
+            showProgress: true,
+            allowClose: false, // 진행 중 외부 클릭으로 닫히는 현상 방지
+            nextBtnText: '다음',
+            prevBtnText: '이전',
+            doneBtnText: '투어 종료',
+            steps: [
+                {
+                    element: () => parentDoc.querySelector('[data-testid="stSidebar"]'),
+                    popover: { 
+                        title: '1. 사이드바 검색 및 필터', 
+                        description: '원하는 부서나 검색어를 입력하여 수많은 산출물 중 내게 필요한 항목을 빠르게 찾아볼 수 있습니다.',
+                        side: 'right', align: 'start'
                     }
-                } 
-            },
-            { 
-                element: () => parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'), 
-                popover: { 
-                    title: '6. 산출물 업로드', 
-                    description: '이 영역을 펼쳐 직접 개발한 자동화 산출물 파일과 설명을 업로드하고 구성원들과 공유할 수 있습니다.', 
-                    side: 'bottom', align: 'start',
-                    onPrevClick: () => {
-                        const tab = getElByText('button[data-baseweb="tab"]', '대시보드 현황');
-                        if (tab) tab.click();
-                        setTimeout(() => driverObj.movePrevious(), 800);
+                },
+                {
+                    element: () => getEl('tour-metrics'),
+                    popover: { 
+                        title: '2. 대시보드 현황', 
+                        description: '등록된 전체 산출물 개수, 참여자 수, 누적 피드백 등 시스템 자동화 도입 현황을 직관적으로 확인합니다.',
+                        side: 'bottom', align: 'start'
                     }
-                } 
-            },
-            { 
-                element: () => {
-                    const el = parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                    return el || parentDoc.querySelector('#tour-repo-list')?.parentElement;
-                }, 
-                popover: { 
-                    title: '7. 커뮤니티 저장소 목록', 
-                    description: '공유된 산출물을 다운로드하거나 미리보고, 피드백과 이슈를 남겨 구성원들과 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 가이드를 언제든 다시 볼 수 있습니다.', 
-                    side: 'top', align: 'center' 
-                } 
-            }
-          ]
+                },
+                {
+                    element: () => parentDoc.querySelector('div[data-baseweb="tab-list"]'),
+                    popover: {
+                        title: '3. 탭 전환',
+                        description: '다음 안내를 위해 산출물 커뮤니티 및 저장소 탭으로 이동합니다. 잠시만 기다려주세요.',
+                        side: 'bottom', align: 'start',
+                        onNextClick: () => {
+                            // 탭 자동 클릭 전환
+                            const tabs = Array.from(parentDoc.querySelectorAll('button[data-baseweb="tab"]'));
+                            const targetTab = tabs.find(t => t.innerText.includes('커뮤니티'));
+                            if (targetTab) {
+                                targetTab.click();
+                                // Streamlit DOM 업데이트 대기 후 다음 스텝 이동
+                                setTimeout(() => {
+                                    d.moveNext();
+                                }, 1200);
+                            } else {
+                                d.moveNext();
+                            }
+                        }
+                    }
+                },
+                {
+                    element: () => {
+                        const m = parentDoc.getElementById('tour-upload');
+                        if (m) {
+                            const expander = m.closest('div[data-testid="stExpander"]');
+                            if (expander) {
+                                // 업로드 창이 닫혀있다면 클릭해서 열기
+                                const summary = expander.querySelector('summary');
+                                if (summary && summary.getAttribute('aria-expanded') === 'false') {
+                                    summary.click(); 
+                                }
+                                return expander;
+                            }
+                            return m.parentElement;
+                        }
+                        return null;
+                    },
+                    popover: { 
+                        title: '4. 새로운 산출물 업로드', 
+                        description: '이 영역에서 직접 개발한 자동화 스크립트나 파일을 등록하여 다른 담당자들과 안전하게 공유할 수 있습니다.',
+                        side: 'bottom', align: 'start'
+                    }
+                },
+                {
+                    element: () => getEl('tour-repo'),
+                    popover: { 
+                        title: '5. 커뮤니티 저장소 목록', 
+                        description: '동료가 올린 산출물을 확인하고, 의견과 이슈를 남겨 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 투어를 언제든 다시 확인할 수 있습니다.',
+                        side: 'top', align: 'start'
+                    }
+                }
+            ]
         });
-
-        setTimeout(() => driverObj.drive(), 800);
+        
+        d.drive();
     }
 
     if (!parentDoc.getElementById('driver-js')) {
@@ -1015,7 +1032,6 @@ def _render_signup_confirm_body():
             st.rerun()
     with c2:
         if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
-            # 처리 상태를 직관적으로 보여주기 위한 로딩 애니메이션
             with st.spinner("계정을 안전하게 생성하고 있습니다. 잠시만 기다려주세요..."):
                 time.sleep(1.5)
                 ok = finalize_signup(pending)
@@ -1129,12 +1145,10 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 메신저를 통해 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 미팅 일정을 메신저를 통해 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
-        
-        # 확인 버튼 클릭 시 인터랙티브 투어 실행 트리거
         st.session_state['tour_trigger'] = True
         st.rerun()
 
@@ -1163,7 +1177,7 @@ def show_survey_page():
     st.markdown("""
     <div style='background-color: #FFF3CD; padding: 15px; border-radius: 8px; border: 1px solid #FFEEBA; margin-bottom: 20px; color: #856404;'>
         <b>1. 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
-        ※ 작성 관련 문의: 원격교육지원센터 임현기(내선5203)
+        ※ 작성 관련 문의: 원격교육지원센터
     </div>
     """, unsafe_allow_html=True)
     
@@ -1197,7 +1211,6 @@ def show_survey_page():
             if not task_name.strip():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
-                # 처리 상태를 시각적으로 보여주기 위한 로딩 애니메이션
                 with st.spinner("현황조사 데이터를 시스템에 기록하고 있습니다. 잠시만 기다려주세요..."):
                     time.sleep(1.5)
                     survey_data = {
@@ -1396,7 +1409,7 @@ def render_department_timeline():
         avg_df["소요시간(시간)"] = avg_df["소요시간(시간)"].round(1)
         st.dataframe(avg_df, use_container_width=True, hide_index=True)
     else:
-        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 커뮤니티 저장소 목록에서 산출물을 '완료 처리'해 보세요.")
+        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 커뮤니티 저장소 목록에서 산출물을 완료 처리해 보세요.")
 
 
 # ==========================================
@@ -1467,6 +1480,7 @@ def show_main_page():
 
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
+        st.markdown("<div id='tour-metrics'></div>", unsafe_allow_html=True)
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"<div class='metric-card'><div class='label'>전체 프로젝트</div><div class='value'>{total_projects}</div><div class='sub'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
@@ -1481,8 +1495,7 @@ def show_main_page():
         chart_col1, chart_col2 = st.columns([6, 4])
         with chart_col1:
             with st.container(border=True):
-                # 투어를 위한 타겟 마커 추가
-                st.markdown("<span id='tour-chart-1'></span>##### 프로젝트 활동 현황", unsafe_allow_html=True)
+                st.markdown("##### 프로젝트 활동 현황")
                 st.caption("최근 7일간 실제 등록된 산출물 건수")
                 if repo_data_all:
                     today = now_kst().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
@@ -1538,8 +1551,7 @@ def show_main_page():
                     st.info("등록된 프로젝트가 없어 부서 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
-        # 투어를 위한 타겟 마커 추가
-        st.markdown("<span id='tour-timeline'></span>##### 부서별 제작 타임라인", unsafe_allow_html=True)
+        st.markdown("##### 부서별 제작 타임라인")
         st.caption("등록일부터 완료 처리일까지의 제작 소요 기간을 보여줍니다. (저장소에서 삭제된 산출물은 집계에서 제외됩니다)")
         with st.container(border=True):
             render_department_timeline()
@@ -1581,7 +1593,6 @@ def show_main_page():
         st.write("<br>", unsafe_allow_html=True)
 
         with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
-            # 투어를 위한 타겟 마커 추가
             st.markdown("<div id='tour-upload'></div>", unsafe_allow_html=True)
             my_dept = get_user_dept(current_user_id)
             st.info(f"업로드 시 부서는 회원가입 시 등록하신 **[{my_dept}]** 으로 자동 지정됩니다.")
@@ -1634,8 +1645,7 @@ def show_main_page():
 
         h1, h2 = st.columns([4, 2])
         with h1:
-            # 투어를 위한 타겟 마커 추가
-            st.markdown(f"<span id='tour-repo-list'></span>#### 커뮤니티 저장소 목록{filter_desc}", unsafe_allow_html=True)
+            st.markdown(f"<span id='tour-repo'></span>#### 커뮤니티 저장소 목록{filter_desc}", unsafe_allow_html=True)
         with h2:
             st.markdown(f"<div style='text-align:right; padding-top:8px; color:var(--muted-foreground); font-size:13px;'>정렬: {st.session_state.get(_sort_key, '최근 활동순')} · 총 {len(filtered_repo)}건</div>", unsafe_allow_html=True)
 
@@ -1991,10 +2001,9 @@ def show_main_page():
                     use_container_width=True
                 )
 
-    # ------------------
-    # 하이라이트 투어 자바스크립트 주입
-    # (DOM이 전부 그려진 뒤 실행되도록 페이지 맨 끝에 위치)
-    # ------------------
+    # ----------------------------------------------------
+    # 실제 화면 요소 하이라이팅 투어 구동 스크립트
+    # ----------------------------------------------------
     def run_product_tour():
         components.html("""
         <script>
@@ -2009,85 +2018,99 @@ def show_main_page():
         }
 
         function startTour() {
-            if (!window.parent.driver) return setTimeout(startTour, 200);
+            if (!window.parent.driver) {
+                setTimeout(startTour, 200);
+                return;
+            }
             
             const driver = window.parent.driver.js.driver;
-            const getElByText = (selector, text) => Array.from(parentDoc.querySelectorAll(selector)).find(el => el.innerText.includes(text));
 
-            const els = {
-                sidebar: parentDoc.querySelector('[data-testid="stSidebar"]'),
-                metrics: parentDoc.querySelector('div[data-testid="stHorizontalBlock"]:has(.metric-card)'),
-                chart: parentDoc.querySelector('#tour-chart-1')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
-                timeline: parentDoc.querySelector('#tour-timeline')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
-                tabs: parentDoc.querySelector('div[data-baseweb="tab-list"]'),
-                upload: parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'),
-                repo: parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || parentDoc.querySelector('#tour-repo-list')?.parentElement
+            const getEl = (id) => {
+                const el = parentDoc.getElementById(id);
+                if (el) {
+                    const wrapper = el.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || el.closest('div[data-testid="stExpander"]') || el.parentElement;
+                    return wrapper;
+                }
+                return null;
             };
 
-            const driverObj = driver({
-              showProgress: true,
-              nextBtnText: '다음',
-              prevBtnText: '이전',
-              doneBtnText: '투어 종료',
-              allowClose: false,
-              steps: [
-                { 
-                    element: els.sidebar, 
-                    popover: { title: '1. 사이드바 검색 및 필터', description: '원하는 산출물을 부서별로 필터링하거나 검색어를 통해 빠르게 찾아볼 수 있습니다.', side: 'right', align: 'start' } 
-                },
-                { 
-                    element: els.metrics, 
-                    popover: { title: '2. 대시보드 요약 지표', description: '전체 프로젝트 수, 누적 피드백, 진행 중인 이슈 등 주요 현황을 한눈에 파악합니다.', side: 'bottom', align: 'start' } 
-                },
-                { 
-                    element: els.chart, 
-                    popover: { title: '3. 활동 현황 및 프로젝트 분포', description: '최근 등록된 산출물 추이와 부서별 프로젝트 분포를 시각적 차트로 확인할 수 있습니다.', side: 'top', align: 'center' } 
-                },
-                { 
-                    element: els.timeline, 
-                    popover: { title: '4. 부서별 제작 타임라인', description: '산출물 등록부터 완료 처리까지의 평균 소요 시간 및 타임라인을 확인합니다.', side: 'top', align: 'center' } 
-                },
-                { 
-                    element: els.tabs, 
-                    popover: { 
-                        title: '5. 커뮤니티 탭 이동', 
-                        description: '산출물을 직접 업로드하고 피드백을 남길 수 있는 커뮤니티 탭으로 자동 이동합니다.', 
-                        side: 'bottom', align: 'center',
-                        onNextClick: () => {
-                            const tab = getElByText('button[data-baseweb="tab"]', '산출물 커뮤니티 및 저장소');
-                            if (tab) tab.click();
-                            setTimeout(() => driverObj.moveNext(), 800);
+            const d = driver({
+                showProgress: true,
+                allowClose: false,
+                nextBtnText: '다음',
+                prevBtnText: '이전',
+                doneBtnText: '투어 종료',
+                steps: [
+                    {
+                        element: () => parentDoc.querySelector('[data-testid="stSidebar"]'),
+                        popover: { 
+                            title: '1. 사이드바 검색 및 필터', 
+                            description: '원하는 부서나 검색어를 입력하여 수많은 산출물 중 내게 필요한 항목을 빠르게 찾아볼 수 있습니다.',
+                            side: 'right', align: 'start'
                         }
-                    } 
-                },
-                { 
-                    element: () => parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'), 
-                    popover: { 
-                        title: '6. 산출물 업로드', 
-                        description: '이 영역을 펼쳐 직접 개발한 자동화 산출물 파일과 설명을 업로드하고 구성원들과 공유할 수 있습니다.', 
-                        side: 'bottom', align: 'start',
-                        onPrevClick: () => {
-                            const tab = getElByText('button[data-baseweb="tab"]', '대시보드 현황');
-                            if (tab) tab.click();
-                            setTimeout(() => driverObj.movePrevious(), 800);
+                    },
+                    {
+                        element: () => getEl('tour-metrics'),
+                        popover: { 
+                            title: '2. 대시보드 현황', 
+                            description: '등록된 전체 산출물 개수, 참여자 수, 누적 피드백 등 시스템 자동화 도입 현황을 직관적으로 확인합니다.',
+                            side: 'bottom', align: 'start'
                         }
-                    } 
-                },
-                { 
-                    element: () => {
-                        const el = parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                        return el || parentDoc.querySelector('#tour-repo-list')?.parentElement;
-                    }, 
-                    popover: { 
-                        title: '7. 커뮤니티 저장소 목록', 
-                        description: '공유된 산출물을 다운로드하거나 미리보고, 피드백과 이슈를 남겨 구성원들과 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 가이드를 언제든 다시 볼 수 있습니다.', 
-                        side: 'top', align: 'center' 
-                    } 
-                }
-              ]
+                    },
+                    {
+                        element: () => parentDoc.querySelector('div[data-baseweb="tab-list"]'),
+                        popover: {
+                            title: '3. 탭 전환',
+                            description: '다음 안내를 위해 산출물 커뮤니티 및 저장소 탭으로 자동 이동합니다. 잠시만 기다려주세요.',
+                            side: 'bottom', align: 'start',
+                            onNextClick: () => {
+                                const tabs = Array.from(parentDoc.querySelectorAll('button[data-baseweb="tab"]'));
+                                const targetTab = tabs.find(t => t.innerText.includes('커뮤니티'));
+                                if (targetTab) {
+                                    targetTab.click();
+                                    setTimeout(() => {
+                                        d.moveNext();
+                                    }, 1200);
+                                } else {
+                                    d.moveNext();
+                                }
+                            }
+                        }
+                    },
+                    {
+                        element: () => {
+                            const m = parentDoc.getElementById('tour-upload');
+                            if (m) {
+                                const expander = m.closest('div[data-testid="stExpander"]');
+                                if (expander) {
+                                    const summary = expander.querySelector('summary');
+                                    if (summary && summary.getAttribute('aria-expanded') === 'false') {
+                                        summary.click(); 
+                                    }
+                                    return expander;
+                                }
+                                return m.parentElement;
+                            }
+                            return null;
+                        },
+                        popover: { 
+                            title: '4. 새로운 산출물 업로드', 
+                            description: '이 영역에서 직접 개발한 자동화 스크립트나 파일을 등록하여 다른 담당자들과 안전하게 공유할 수 있습니다.',
+                            side: 'bottom', align: 'start'
+                        }
+                    },
+                    {
+                        element: () => getEl('tour-repo'),
+                        popover: { 
+                            title: '5. 커뮤니티 저장소 목록', 
+                            description: '동료가 올린 산출물을 확인하고, 의견과 이슈를 남겨 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 투어를 언제든 다시 확인할 수 있습니다.',
+                            side: 'top', align: 'start'
+                        }
+                    }
+                ]
             });
-
-            setTimeout(() => driverObj.drive(), 800);
+            
+            d.drive();
         }
 
         if (!parentDoc.getElementById('driver-js')) {
@@ -2102,7 +2125,6 @@ def show_main_page():
         </script>
         """, height=0, width=0)
 
-    # 렌더링된 트리거가 있을 경우에만 실행
     if st.session_state.get('tour_trigger', False):
         run_product_tour()
         st.session_state['tour_trigger'] = False
