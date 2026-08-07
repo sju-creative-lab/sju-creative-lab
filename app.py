@@ -136,13 +136,13 @@ def load_data():
         _log("streamlit_gsheets 패키지 import 성공")
 
         if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-            _log("st.secrets에 [connections.gsheets] 설정 발견 → Google Sheets 모드로 전환 시도")
+            _log("st.secrets에 [connections.gsheets] 설정 발견 -> Google Sheets 모드로 전환 시도")
             st.session_state['db_mode'] = "Google Sheets"
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 _log("st.connection 객체 생성 성공")
             except Exception as e_conn:
-                _log(f"❌ st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn, 'connection_create')}", "error")
+                _log(f"[오류] st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn, 'connection_create')}", "error")
                 conn = None
 
             if conn is not None:
@@ -192,9 +192,9 @@ def load_data():
                         local_data['users_db'] = merged_users
                         _log(f"Users 병합 완료: 총 {len(merged_users)}건 (승인 절차 폐지로 전원 승인 처리)")
                     else:
-                        _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
+                        _log("[안내] Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
                 except Exception as e_users:
-                    _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
+                    _log(f"[오류] Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
 
                 try:
                     repo_df = conn.read(worksheet="Repository", ttl=0)
@@ -239,7 +239,7 @@ def load_data():
                     else:
                         local_data['repository'] = []
                 except Exception as e_repo:
-                    _log(f"❌ Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
+                    _log(f"[오류] Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
 
                 try:
                     cat_df = conn.read(worksheet="Categories", ttl=0)
@@ -261,7 +261,7 @@ def load_data():
                         local_data['survey'] = []
                 except Exception as e_sv:
                     local_data['survey'] = local_data.get('survey', [])
-                    _log(f"ℹ️ survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
+                    _log(f"[안내] survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
 
                 try:
                     timeline_df = conn.read(worksheet="TimelineLog", ttl=0)
@@ -270,9 +270,9 @@ def load_data():
                 except Exception as e_tl:
                     pass
         else:
-            _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
+            _log("st.secrets에 [connections.gsheets] 설정이 없습니다 -> Local File 모드로 동작합니다.")
     except Exception as e:
-        _log(f"❌ Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e, 'init')}", "error")
+        _log(f"[오류] Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e, 'init')}", "error")
 
     return local_data
 
@@ -400,10 +400,10 @@ def save_data(data):
             full_tb = traceback.format_exc()
             st.session_state.setdefault('gsheets_full_traceback', []).append(("save_data", full_tb))
             err_txt = f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'}"
-            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
+            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"[오류] save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
             if core_save_failed:
                 st.session_state['last_save_status'] = "fail"
-                st.error(f"구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
+                st.error(f"[주의] 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 있습니다. 오류: {err_txt}")
             else:
                 st.session_state['last_save_status'] = "success"
     else:
@@ -971,7 +971,6 @@ def show_login_page():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
                         st.session_state['last_activity'] = now_kst()
-                        # URL 기반 자동 로그인 로직 제거 (보안 강화 및 로그아웃 유지)
                         st.rerun()
 
             with tab_signup:
@@ -1013,10 +1012,15 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
+        
+        # 확인 버튼 클릭 시 프로덕트 투어 플래그 활성화 (최초 1회 자동 실행)[cite: 1]
+        st.session_state['show_product_tour'] = True
+        st.session_state['tour_step'] = 1
+        
         st.rerun()
 
 if hasattr(st, "dialog"):
@@ -1042,7 +1046,7 @@ def show_survey_page():
     st.markdown("### 부서별 자동화 대상 업무 현황조사")
     st.markdown("""
     <div style='background-color: #FFF3CD; padding: 15px; border-radius: 8px; border: 1px solid #FFEEBA; margin-bottom: 20px; color: #856404;'>
-        <b>① 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
+        <b>1. 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
         ※ 작성 관련 문의: 원격교육지원센터 임현기(내선5203, 또는 1:1 잔디)
     </div>
     """, unsafe_allow_html=True)
@@ -1098,16 +1102,86 @@ def show_survey_page():
                     st.session_state['show_survey_success'] = True
                     st.rerun()
 
-    # 제출이 완료되어 플래그가 세워졌을 경우 팝업 호출
     if st.session_state.get('show_survey_success', False):
         show_survey_success_dialog()
         
     st.write("<br><br>", unsafe_allow_html=True)
     
-    # 폼 바로 아래 (가운데 하단)에 로고 작게 배치
     _, bottom_logo_col, _ = st.columns([4, 1.5, 4])
     with bottom_logo_col:
         safe_show_logo(use_container_width=True)
+
+
+# ==========================================
+# 3-2. 프로덕트 투어 팝업 화면
+# ==========================================
+def _render_product_tour_body():
+    step = st.session_state.get('tour_step', 1)
+
+    st.progress(step / 3.0)
+
+    if step == 1:
+        st.markdown("### 1. 대시보드 현황")
+        st.markdown("""
+            <div style='background-color: var(--muted); padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
+                <b>프로젝트 전체 현황을 한눈에!</b><br><br>
+                메인 화면의 <b>'대시보드 현황'</b> 탭에서는 등록된 산출물 개수, 참여 담당자, 부서별 타임라인 및 파이 차트를 통해 우리 대학의 AI/자동화 도입 현황을 직관적으로 파악할 수 있습니다.
+            </div>
+        """, unsafe_allow_html=True)
+    elif step == 2:
+        st.markdown("### 2. 산출물 커뮤니티 및 저장소")
+        st.markdown("""
+            <div style='background-color: var(--muted); padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
+                <b>개발 산출물을 공유하고 협업하세요!</b><br><br>
+                <b>'산출물 커뮤니티 및 저장소'</b> 탭으로 이동하면:<br>
+                - 직접 만든 자동화 스크립트나 산출물을 업로드하여 배포할 수 있습니다.<br>
+                - 다른 직원이 올린 산출물을 다운로드하고, '피드백'과 '이슈'를 남겨 함께 개선해 나갈 수 있습니다.
+            </div>
+        """, unsafe_allow_html=True)
+    elif step == 3:
+        st.markdown("### 3. 사이드바 메뉴 활용")
+        st.markdown("""
+            <div style='background-color: var(--muted); padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
+                <b>원하는 산출물을 빠르게 찾으세요!</b><br><br>
+                화면 좌측(모바일은 상단 메뉴)의 <b>사이드바 필터</b>를 활용해 보세요.<br>
+                특정 <b>부서별</b>로 정렬하거나, <b>검색어</b>를 입력해 수많은 프로젝트 중 내게 필요한 시스템을 즉시 찾아낼 수 있습니다.<br><br>
+                <i>* 우측 상단의 '이용 안내' 버튼을 누르시면 언제든 본 가이드를 다시 보실 수 있습니다.</i>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.write("")
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        if step > 1:
+            if st.button("이전", use_container_width=True):
+                st.session_state['tour_step'] -= 1
+                st.rerun()
+    with c2:
+        st.markdown(f"<div style='text-align:center; padding-top:8px; font-weight:bold; color:var(--muted-foreground);'>{step} / 3</div>", unsafe_allow_html=True)
+    with c3:
+        if step < 3:
+            if st.button("다음 단계로", use_container_width=True, type="primary"):
+                st.session_state['tour_step'] += 1
+                st.rerun()
+        else:
+            if st.button("시작하기", use_container_width=True, type="primary"):
+                st.session_state['show_product_tour'] = False
+                st.rerun()
+
+if hasattr(st, "dialog"):
+    @st.dialog("AI Creative Lab 둘러보기")
+    def show_product_tour_dialog():
+        _render_product_tour_body()
+elif hasattr(st, "experimental_dialog"):
+    @st.experimental_dialog("AI Creative Lab 둘러보기")
+    def show_product_tour_dialog():
+        _render_product_tour_body()
+else:
+    def show_product_tour_dialog():
+        st.markdown("---")
+        with st.container(border=True):
+            st.markdown("#### AI Creative Lab 둘러보기")
+            _render_product_tour_body()
 
 
 # ==========================================
@@ -1282,10 +1356,13 @@ def render_department_timeline():
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
+    # 플래그 활성화 시 투어 다이얼로그 호출
+    if st.session_state.get('show_product_tour', False):
+        show_product_tour_dialog()
+
     now = now_kst()
-    # 타임아웃 로그아웃 시 세션 정보 파기
     if 'last_activity' in st.session_state and now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
-        keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
+        keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup', 'show_product_tour', 'tour_step']
         for k in keys_to_clear:
             if k in st.session_state:
                 del st.session_state[k]
@@ -1302,11 +1379,16 @@ def show_main_page():
         st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
-        r1, r2, r3, r4 = st.columns([1, 1, 1, 1.5])
+        # 우측 상단 이용 안내(투어) 버튼 포함
+        r0, r1, r2, r3, r4 = st.columns([1.2, 1, 1, 1, 1.5])
+        with r0:
+            if st.button("이용 안내", use_container_width=True):
+                st.session_state['show_product_tour'] = True
+                st.session_state['tour_step'] = 1
+                st.rerun()
         with r1:
             if st.button("로그아웃", use_container_width=True):
-                # 로그아웃 버튼 클릭 시 핵심 세션 정보를 완벽히 파기하여 재로그인 유도
-                keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
+                keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup', 'show_product_tour', 'tour_step']
                 for k in keys_to_clear:
                     if k in st.session_state:
                         del st.session_state[k]
@@ -1840,7 +1922,7 @@ def show_main_page():
     # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
     if is_admin:
         with tab4:
-            st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
+            st.markdown("### 부서별 자동화 대상 업무 현황조사 제출 내역")
             st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
             
             survey_list = st.session_state['app_data'].get('survey', [])
@@ -1917,7 +1999,6 @@ else:
     uinfo = users_db.get(user_id, {})
     is_completed = uinfo.get('survey_completed', False)
 
-    # 안내 팝업이 띄워져야 하는 플래그 상태거나 현황조사가 제출되지 않은 경우
     if st.session_state.get('show_survey_success', False):
         st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
         show_survey_page()
