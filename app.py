@@ -414,7 +414,6 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 
-# 세션 초기화 (로그인 상태)
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
@@ -903,7 +902,7 @@ def _render_signup_confirm_body():
             st.rerun()
     with c2:
         if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
-            # 로딩 애니메이션 추가
+            # 처리 상태를 시각적으로 보여주기 위한 로딩 애니메이션
             with st.spinner("계정을 안전하게 생성하고 있습니다. 잠시만 기다려주세요..."):
                 time.sleep(1.5)
                 ok = finalize_signup(pending)
@@ -1017,12 +1016,12 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 메신저를 통해 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
         
-        # 확인 버튼 클릭 시 프로덕트 투어 플래그 활성화 (최초 1회만 자동 실행)
+        # 현황 조사 최초 제출 후 투어 자동 1회 실행 설정[cite: 1]
         st.session_state['show_product_tour'] = True
         st.session_state['tour_step'] = 1
         
@@ -1043,6 +1042,7 @@ else:
             st.markdown("#### 제출 완료 안내")
             _render_survey_success_body()
 
+
 def show_survey_page():
     user_id = st.session_state['user_id']
     users_db = st.session_state['app_data'].get('users_db', {})
@@ -1052,7 +1052,7 @@ def show_survey_page():
     st.markdown("""
     <div style='background-color: #FFF3CD; padding: 15px; border-radius: 8px; border: 1px solid #FFEEBA; margin-bottom: 20px; color: #856404;'>
         <b>1. 단순반복성 업무나 자동화가 필요한 업무를 중심으로 작성해 주시기 바랍니다.</b><br>
-        ※ 작성 관련 문의: 원격교육지원센터 임현기(내선5203, 또는 1:1 잔디)
+        ※ 작성 관련 문의: 원격교육지원센터 임현기(내선5203)
     </div>
     """, unsafe_allow_html=True)
     
@@ -1068,7 +1068,7 @@ def show_survey_page():
 
         c3, c4 = st.columns(2)
         with c3:
-            main_user = st.text_input("주 사용자", placeholder="예: 원격교육지원센터 담당직원, 각 학과 직원")
+            main_user = st.text_input("주 사용자", placeholder="예: 담당직원 및 각 학과 조교")
         with c4:
             freq = st.text_input("업무주기 (주당)", placeholder="예: 주 3회 이상")
 
@@ -1078,7 +1078,7 @@ def show_survey_page():
         with c6:
             linked_dept = st.text_input("연계 부서", placeholder="예: 각 학과")
 
-        improvement = st.text_area("개선 필요사항", placeholder="- 엑셀에 입력하는 과정에서 오타 발생\n- 수기입력에 행정력 소모 심함\n- 기존 이용내역에 대한 통계 등 누적자료에 대한 분석 어려움")
+        improvement = st.text_area("개선 필요사항", placeholder="- 엑셀에 입력하는 과정에서 오타 발생\n- 수기입력에 행정력 소모 심함\n- 기존 이용내역에 대한 통계 등 누적자료 분석 어려움")
 
         submitted = st.form_submit_button("현황조사 제출 완료하기", use_container_width=True, type="primary")
 
@@ -1086,7 +1086,7 @@ def show_survey_page():
             if not task_name.strip():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
-                # 로딩 애니메이션 추가
+                # 처리 상태를 시각적으로 보여주기 위한 로딩 애니메이션
                 with st.spinner("현황조사 데이터를 시스템에 기록하고 있습니다. 잠시만 기다려주세요..."):
                     time.sleep(1.5)
                     survey_data = {
@@ -1121,13 +1121,12 @@ def show_survey_page():
 
 
 # ==========================================
-# 3-2. 프로덕트 투어 팝업 화면
+# 3-2. 프로덕트 투어 팝업 화면 디자인
 # ==========================================
 def _render_product_tour_body():
     step = st.session_state.get('tour_step', 1)
 
-    st.progress(step / 3.0)
-
+    # 상단 이미지(배너) 영역 및 텍스트 구조 정의[cite: 1]
     img_bg = ""
     title = ""
     desc = ""
@@ -1135,59 +1134,51 @@ def _render_product_tour_body():
     if step == 1:
         img_bg = "linear-gradient(135deg, #0052FF, #4D7CFF)"
         title = "1. 대시보드 현황"
-        desc = "프로젝트 전체 현황을 한눈에 파악하세요!<br><br>메인 화면의 <b>'대시보드 현황'</b> 탭에서는 등록된 산출물 개수, 참여 담당자, 부서별 타임라인 및 파이 차트를 통해 우리 대학의 시스템 자동화 도입 현황을 직관적으로 확인할 수 있습니다."
+        desc = "프로젝트 전체 현황을 한눈에 파악하세요!<br><br>메인 화면의 <b>대시보드 현황</b> 탭에서는 등록된 산출물 개수, 참여 담당자, 부서별 타임라인 및 파이 차트를 통해 시스템 자동화 도입 현황을 직관적으로 확인할 수 있습니다."
     elif step == 2:
         img_bg = "linear-gradient(135deg, #4D7CFF, #7fa4ff)"
         title = "2. 산출물 커뮤니티 및 저장소"
-        desc = "개발 산출물을 공유하고 자유롭게 협업하세요!<br><br><b>'산출물 커뮤니티 및 저장소'</b> 탭으로 이동하면:<br>- 직접 만든 자동화 스크립트나 산출물을 업로드하여 배포할 수 있습니다.<br>- 다른 직원이 올린 산출물을 다운로드하고, '피드백'과 '이슈'를 남겨 함께 개선해 나갈 수 있습니다."
+        desc = "개발 산출물을 공유하고 자유롭게 협업하세요!<br><br><b>산출물 커뮤니티 및 저장소</b> 탭으로 이동하면:<br>- 직접 만든 자동화 스크립트나 산출물을 업로드하여 배포할 수 있습니다.<br>- 다른 직원이 올린 산출물을 다운로드하고, 피드백과 이슈를 남겨 함께 개선해 나갈 수 있습니다."
     elif step == 3:
         img_bg = "linear-gradient(135deg, #1e293b, #64748B)"
         title = "3. 사이드바 메뉴 활용"
-        desc = "원하는 산출물을 빠르게 찾으세요!<br><br>화면 좌측(모바일은 상단 메뉴)의 <b>사이드바 필터</b>를 활용해 보세요.<br>특정 <b>부서별</b>로 정렬하거나, <b>검색어</b>를 입력해 수많은 프로젝트 중 내게 필요한 시스템을 즉시 찾아낼 수 있습니다.<br><br><span style='font-size:12px; color:var(--muted-foreground);'>* 우측 상단의 '이용 안내' 버튼을 누르시면 언제든 본 가이드를 다시 보실 수 있습니다.</span>"
+        desc = "원하는 산출물을 빠르게 찾으세요!<br><br>화면 좌측(모바일은 상단 메뉴)의 <b>사이드바 필터</b>를 활용해 보세요.<br>특정 부서별로 정렬하거나, 검색어를 입력해 수많은 프로젝트 중 내게 필요한 시스템을 즉시 찾아낼 수 있습니다.<br><br><span style='font-size:12px; color:var(--muted-foreground);'>* 우측 상단의 [이용 안내] 버튼을 누르시면 언제든 본 가이드를 다시 보실 수 있습니다.</span>"
 
     st.markdown(f"""
-        <div style='text-align: center; padding: 10px 0 20px 0;'>
-            <div style='background: {img_bg}; height: 160px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);'>
-                <h2 style='color: white; margin: 0; font-weight: 800; font-family: var(--font-display);'>Step {step}</h2>
+        <div style='text-align: center; padding: 0 0 20px 0;'>
+            <div style='background: {img_bg}; height: 180px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);'>
+                <h2 style='color: white; margin: 0; font-weight: 800; font-family: var(--font-display); letter-spacing: 2px;'>STEP {step}</h2>
             </div>
-            <h3 style='margin-bottom: 12px; color: var(--foreground); font-weight: 700;'>{title}</h3>
-            <p style='color: var(--muted-foreground); font-size: 14px; line-height: 1.6; text-align: left; padding: 0 10px;'>
+            <h3 style='margin-bottom: 16px; color: var(--foreground); font-weight: 700;'>{title}</h3>
+            <p style='color: var(--muted-foreground); font-size: 15px; line-height: 1.6; text-align: center; padding: 0 10px; word-break: keep-all;'>
                 {desc}
             </p>
         </div>
     """, unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c1:
-        if step > 1:
-            if st.button("이전", use_container_width=True):
-                st.session_state['tour_step'] -= 1
-                st.rerun()
-    with c2:
-        st.markdown(f"<div style='text-align:center; padding-top:8px; font-weight:bold; color:var(--muted-foreground);'>{step} / 3</div>", unsafe_allow_html=True)
-    with c3:
-        if step < 3:
-            if st.button("다음 단계로", use_container_width=True, type="primary"):
-                st.session_state['tour_step'] += 1
-                st.rerun()
-        else:
-            if st.button("시작하기", use_container_width=True, type="primary"):
-                st.session_state['show_product_tour'] = False
-                st.rerun()
+    # 하단 단일 버튼 구조 적용 (이전 버튼 숨김, 진행 버튼 집중)[cite: 1]
+    if step < 3:
+        if st.button(f"다음 단계로 ({step}/3)", use_container_width=True, type="primary"):
+            st.session_state['tour_step'] += 1
+            st.rerun()
+    else:
+        if st.button("시작하기", use_container_width=True, type="primary"):
+            st.session_state['show_product_tour'] = False
+            st.rerun()
 
 if hasattr(st, "dialog"):
-    @st.dialog("AI Creative Lab 둘러보기")
+    @st.dialog("AI Creative Lab 이용 안내")
     def show_product_tour_dialog():
         _render_product_tour_body()
 elif hasattr(st, "experimental_dialog"):
-    @st.experimental_dialog("AI Creative Lab 둘러보기")
+    @st.experimental_dialog("AI Creative Lab 이용 안내")
     def show_product_tour_dialog():
         _render_product_tour_body()
 else:
     def show_product_tour_dialog():
         st.markdown("---")
         with st.container(border=True):
-            st.markdown("#### AI Creative Lab 둘러보기")
+            st.markdown("#### AI Creative Lab 이용 안내")
             _render_product_tour_body()
 
 
@@ -1363,6 +1354,7 @@ def render_department_timeline():
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
+    # 플래그 활성화 시 투어 다이얼로그 호출
     if st.session_state.get('show_product_tour', False):
         show_product_tour_dialog()
 
@@ -1928,7 +1920,7 @@ def show_main_page():
     if is_admin:
         with tab4:
             st.markdown("### 부서별 자동화 대상 업무 현황조사 제출 내역")
-            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다. 구글 시트의 'survey' 탭과 연동됩니다.")
+            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
             
             survey_list = st.session_state['app_data'].get('survey', [])
             
@@ -1944,7 +1936,7 @@ def show_main_page():
                 csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
                 
                 st.download_button(
-                    label="CSV 파일 다운로드 (엑셀 호환)",
+                    label="CSV 파일 다운로드",
                     data=csv_data,
                     file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
