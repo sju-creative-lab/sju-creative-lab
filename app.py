@@ -414,6 +414,7 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
 
+# 세션 초기화 (로그인 상태)
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
@@ -534,6 +535,118 @@ def inject_timer_js():
         }}, 1000);
         </script>
     """, height=0)
+
+
+# ==========================================
+# 인터랙티브 프로덕트 투어 스크립트 (Driver.js)
+# ==========================================
+def run_product_tour():
+    components.html("""
+    <script>
+    const parentDoc = window.parent.document;
+    
+    if (!parentDoc.getElementById('driver-css')) {
+        const link = parentDoc.createElement('link');
+        link.id = 'driver-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
+        parentDoc.head.appendChild(link);
+    }
+
+    function startTour() {
+        if (!window.parent.driver) return setTimeout(startTour, 200);
+        
+        const driver = window.parent.driver.js.driver;
+        const getElByText = (selector, text) => Array.from(parentDoc.querySelectorAll(selector)).find(el => el.innerText.includes(text));
+
+        // 각 투어 스텝 대상 요소를 선언합니다.
+        const els = {
+            sidebar: parentDoc.querySelector('[data-testid="stSidebar"]'),
+            metrics: parentDoc.querySelector('div[data-testid="stHorizontalBlock"]:has(.metric-card)'),
+            chart: parentDoc.querySelector('#tour-chart-1')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
+            timeline: parentDoc.querySelector('#tour-timeline')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
+            tabs: parentDoc.querySelector('div[data-baseweb="tab-list"]'),
+            upload: parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'),
+            repo: parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || parentDoc.querySelector('#tour-repo-list')?.parentElement
+        };
+
+        const driverObj = driver({
+          showProgress: true,
+          nextBtnText: '다음',
+          prevBtnText: '이전',
+          doneBtnText: '투어 종료',
+          allowClose: false,
+          steps: [
+            { 
+                element: els.sidebar, 
+                popover: { title: '1. 사이드바 검색 및 필터', description: '원하는 산출물을 부서별로 필터링하거나 검색어를 통해 빠르게 찾아볼 수 있습니다.', side: 'right', align: 'start' } 
+            },
+            { 
+                element: els.metrics, 
+                popover: { title: '2. 대시보드 요약 지표', description: '전체 프로젝트 수, 누적 피드백, 진행 중인 이슈 등 주요 현황을 한눈에 파악합니다.', side: 'bottom', align: 'start' } 
+            },
+            { 
+                element: els.chart, 
+                popover: { title: '3. 활동 현황 및 프로젝트 분포', description: '최근 등록된 산출물 추이와 부서별 프로젝트 분포를 시각적 차트로 확인할 수 있습니다.', side: 'top', align: 'center' } 
+            },
+            { 
+                element: els.timeline, 
+                popover: { title: '4. 부서별 제작 타임라인', description: '산출물 등록부터 완료 처리까지의 평균 소요 시간 및 타임라인을 확인합니다.', side: 'top', align: 'center' } 
+            },
+            { 
+                element: els.tabs, 
+                popover: { 
+                    title: '5. 커뮤니티 탭 이동', 
+                    description: '산출물을 직접 업로드하고 피드백을 남길 수 있는 커뮤니티 탭으로 자동 이동합니다.', 
+                    side: 'bottom', align: 'center',
+                    onNextClick: () => {
+                        const tab = getElByText('button[data-baseweb="tab"]', '산출물 커뮤니티 및 저장소');
+                        if (tab) tab.click();
+                        setTimeout(() => driverObj.moveNext(), 800);
+                    }
+                } 
+            },
+            { 
+                element: () => parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'), 
+                popover: { 
+                    title: '6. 산출물 업로드', 
+                    description: '이 영역을 펼쳐 직접 개발한 자동화 산출물 파일과 설명을 업로드하고 구성원들과 공유할 수 있습니다.', 
+                    side: 'bottom', align: 'start',
+                    onPrevClick: () => {
+                        const tab = getElByText('button[data-baseweb="tab"]', '대시보드 현황');
+                        if (tab) tab.click();
+                        setTimeout(() => driverObj.movePrevious(), 800);
+                    }
+                } 
+            },
+            { 
+                element: () => {
+                    const el = parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                    return el || parentDoc.querySelector('#tour-repo-list')?.parentElement;
+                }, 
+                popover: { 
+                    title: '7. 커뮤니티 저장소 목록', 
+                    description: '공유된 산출물을 다운로드하거나 미리보고, 피드백과 이슈를 남겨 구성원들과 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 가이드를 언제든 다시 볼 수 있습니다.', 
+                    side: 'top', align: 'center' 
+                } 
+            }
+          ]
+        });
+
+        setTimeout(() => driverObj.drive(), 800);
+    }
+
+    if (!parentDoc.getElementById('driver-js')) {
+        const script = parentDoc.createElement('script');
+        script.id = 'driver-js';
+        script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
+        script.onload = startTour;
+        parentDoc.body.appendChild(script);
+    } else {
+        startTour();
+    }
+    </script>
+    """, height=0, width=0)
 
 
 # ==========================================
@@ -902,6 +1015,7 @@ def _render_signup_confirm_body():
             st.rerun()
     with c2:
         if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
+            # 처리 상태를 직관적으로 보여주기 위한 로딩 애니메이션
             with st.spinner("계정을 안전하게 생성하고 있습니다. 잠시만 기다려주세요..."):
                 time.sleep(1.5)
                 ok = finalize_signup(pending)
@@ -1020,7 +1134,7 @@ def _render_survey_success_body():
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
         
-        # 확인 버튼 클릭 시 프로덕트 투어 플래그를 활성화하여 다음 화면에서 실행되도록 트리거
+        # 확인 버튼 클릭 시 인터랙티브 투어 실행 트리거
         st.session_state['tour_trigger'] = True
         st.rerun()
 
@@ -1083,6 +1197,7 @@ def show_survey_page():
             if not task_name.strip():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
+                # 처리 상태를 시각적으로 보여주기 위한 로딩 애니메이션
                 with st.spinner("현황조사 데이터를 시스템에 기록하고 있습니다. 잠시만 기다려주세요..."):
                     time.sleep(1.5)
                     survey_data = {
@@ -1114,83 +1229,6 @@ def show_survey_page():
     _, bottom_logo_col, _ = st.columns([4, 1.5, 4])
     with bottom_logo_col:
         safe_show_logo(use_container_width=True)
-
-
-# ==========================================
-# 3-2. 인터랙티브 프로덕트 투어 기능 (Driver.js 주입)
-# ==========================================
-def run_product_tour():
-    """
-    화면 내 요소를 직접 하이라이트하며 설명해주는 인터랙티브 투어 자바스크립트를 삽입합니다.
-    """
-    components.html("""
-    <script>
-    const parentDoc = window.parent.document;
-    
-    // CSS 로드 확인 및 주입
-    if (!parentDoc.getElementById('driver-css')) {
-        const link = parentDoc.createElement('link');
-        link.id = 'driver-css';
-        link.rel = 'stylesheet';
-        link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
-        parentDoc.head.appendChild(link);
-    }
-
-    function startTour() {
-        const driver = window.parent.driver.js.driver;
-        const driverObj = driver({
-          showProgress: true,
-          nextBtnText: '다음',
-          prevBtnText: '이전',
-          doneBtnText: '완료',
-          allowClose: true,
-          steps: [
-            {
-                element: parentDoc.querySelector('[data-testid="stSidebar"]'),
-                popover: {
-                    title: '1. 사이드바 검색 및 필터',
-                    description: '원하는 산출물을 부서별로 필터링하거나 검색어를 통해 빠르게 찾아볼 수 있습니다.',
-                    side: 'right',
-                    align: 'start'
-                }
-            },
-            {
-                element: parentDoc.querySelector('div[data-baseweb="tab-list"]'),
-                popover: {
-                    title: '2. 주요 기능 이동 탭',
-                    description: '대시보드 현황 화면과 산출물을 직접 등록하고 조회할 수 있는 커뮤니티 공간을 자유롭게 오갈 수 있습니다.',
-                    side: 'bottom',
-                    align: 'start'
-                }
-            },
-            {
-                element: parentDoc.querySelector('.metric-card'),
-                popover: {
-                    title: '3. 현황 통계 요약',
-                    description: '현재 시스템에 등록된 전체 산출물, 진행 중인 이슈 현황, 참여 담당자 수를 한눈에 파악할 수 있습니다.',
-                    side: 'bottom',
-                    align: 'start'
-                }
-            }
-          ]
-        });
-        
-        // Streamlit 렌더링 지연시간을 고려하여 약간 딜레이 후 실행
-        setTimeout(() => driverObj.drive(), 800);
-    }
-
-    // JS 로드 확인 및 주입 후 투어 시작
-    if (!parentDoc.getElementById('driver-js')) {
-        const script = parentDoc.createElement('script');
-        script.id = 'driver-js';
-        script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
-        script.onload = startTour;
-        parentDoc.body.appendChild(script);
-    } else {
-        startTour();
-    }
-    </script>
-    """, height=0, width=0)
 
 
 # ==========================================
@@ -1365,11 +1403,6 @@ def render_department_timeline():
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
-    # 투어 트리거가 활성화된 경우 자바스크립트 주입 함수 실행 후 즉시 상태 해제
-    if st.session_state.get('tour_trigger', False):
-        run_product_tour()
-        st.session_state['tour_trigger'] = False
-
     now = now_kst()
     if 'last_activity' in st.session_state and now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
         keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup', 'tour_trigger']
@@ -1448,7 +1481,8 @@ def show_main_page():
         chart_col1, chart_col2 = st.columns([6, 4])
         with chart_col1:
             with st.container(border=True):
-                st.markdown("##### 프로젝트 활동 현황")
+                # 투어를 위한 타겟 마커 추가
+                st.markdown("<span id='tour-chart-1'></span>##### 프로젝트 활동 현황", unsafe_allow_html=True)
                 st.caption("최근 7일간 실제 등록된 산출물 건수")
                 if repo_data_all:
                     today = now_kst().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
@@ -1504,7 +1538,8 @@ def show_main_page():
                     st.info("등록된 프로젝트가 없어 부서 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
-        st.markdown("##### 부서별 제작 타임라인")
+        # 투어를 위한 타겟 마커 추가
+        st.markdown("<span id='tour-timeline'></span>##### 부서별 제작 타임라인", unsafe_allow_html=True)
         st.caption("등록일부터 완료 처리일까지의 제작 소요 기간을 보여줍니다. (저장소에서 삭제된 산출물은 집계에서 제외됩니다)")
         with st.container(border=True):
             render_department_timeline()
@@ -1519,7 +1554,7 @@ def show_main_page():
             if repo_data_all:
                 st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
             else:
-                st.info("등록된 산출물 프로젝트가 없습니다. 대시보드 탭 옆 커뮤니티 및 저장소에서 등록해 주세요.")
+                st.info("등록된 산출물 프로젝트가 없습니다. 산출물 커뮤니티 및 저장소 탭에서 등록해 주세요.")
         else:
             current_dash_page = render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash_bottom')
             start_idx = (current_dash_page - 1) * PAGE_SIZE
@@ -1546,6 +1581,8 @@ def show_main_page():
         st.write("<br>", unsafe_allow_html=True)
 
         with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
+            # 투어를 위한 타겟 마커 추가
+            st.markdown("<div id='tour-upload'></div>", unsafe_allow_html=True)
             my_dept = get_user_dept(current_user_id)
             st.info(f"업로드 시 부서는 회원가입 시 등록하신 **[{my_dept}]** 으로 자동 지정됩니다.")
             with st.form("upload_form", clear_on_submit=True):
@@ -1581,7 +1618,6 @@ def show_main_page():
                             save_data(st.session_state['app_data'])
                         if st.session_state.get('last_save_status') != "fail":
                             st.success("성공적으로 배포되었습니다.")
-                            st.balloons()
                             st.rerun()
                     else:
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
@@ -1598,7 +1634,8 @@ def show_main_page():
 
         h1, h2 = st.columns([4, 2])
         with h1:
-            st.markdown(f"#### 커뮤니티 저장소 목록{filter_desc}")
+            # 투어를 위한 타겟 마커 추가
+            st.markdown(f"<span id='tour-repo-list'></span>#### 커뮤니티 저장소 목록{filter_desc}", unsafe_allow_html=True)
         with h2:
             st.markdown(f"<div style='text-align:right; padding-top:8px; color:var(--muted-foreground); font-size:13px;'>정렬: {st.session_state.get(_sort_key, '최근 활동순')} · 총 {len(filtered_repo)}건</div>", unsafe_allow_html=True)
 
@@ -1953,6 +1990,122 @@ def show_main_page():
                     mime="text/csv",
                     use_container_width=True
                 )
+
+    # ------------------
+    # 하이라이트 투어 자바스크립트 주입
+    # (DOM이 전부 그려진 뒤 실행되도록 페이지 맨 끝에 위치)
+    # ------------------
+    def run_product_tour():
+        components.html("""
+        <script>
+        const parentDoc = window.parent.document;
+        
+        if (!parentDoc.getElementById('driver-css')) {
+            const link = parentDoc.createElement('link');
+            link.id = 'driver-css';
+            link.rel = 'stylesheet';
+            link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
+            parentDoc.head.appendChild(link);
+        }
+
+        function startTour() {
+            if (!window.parent.driver) return setTimeout(startTour, 200);
+            
+            const driver = window.parent.driver.js.driver;
+            const getElByText = (selector, text) => Array.from(parentDoc.querySelectorAll(selector)).find(el => el.innerText.includes(text));
+
+            const els = {
+                sidebar: parentDoc.querySelector('[data-testid="stSidebar"]'),
+                metrics: parentDoc.querySelector('div[data-testid="stHorizontalBlock"]:has(.metric-card)'),
+                chart: parentDoc.querySelector('#tour-chart-1')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
+                timeline: parentDoc.querySelector('#tour-timeline')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]'),
+                tabs: parentDoc.querySelector('div[data-baseweb="tab-list"]'),
+                upload: parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'),
+                repo: parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || parentDoc.querySelector('#tour-repo-list')?.parentElement
+            };
+
+            const driverObj = driver({
+              showProgress: true,
+              nextBtnText: '다음',
+              prevBtnText: '이전',
+              doneBtnText: '투어 종료',
+              allowClose: false,
+              steps: [
+                { 
+                    element: els.sidebar, 
+                    popover: { title: '1. 사이드바 검색 및 필터', description: '원하는 산출물을 부서별로 필터링하거나 검색어를 통해 빠르게 찾아볼 수 있습니다.', side: 'right', align: 'start' } 
+                },
+                { 
+                    element: els.metrics, 
+                    popover: { title: '2. 대시보드 요약 지표', description: '전체 프로젝트 수, 누적 피드백, 진행 중인 이슈 등 주요 현황을 한눈에 파악합니다.', side: 'bottom', align: 'start' } 
+                },
+                { 
+                    element: els.chart, 
+                    popover: { title: '3. 활동 현황 및 프로젝트 분포', description: '최근 등록된 산출물 추이와 부서별 프로젝트 분포를 시각적 차트로 확인할 수 있습니다.', side: 'top', align: 'center' } 
+                },
+                { 
+                    element: els.timeline, 
+                    popover: { title: '4. 부서별 제작 타임라인', description: '산출물 등록부터 완료 처리까지의 평균 소요 시간 및 타임라인을 확인합니다.', side: 'top', align: 'center' } 
+                },
+                { 
+                    element: els.tabs, 
+                    popover: { 
+                        title: '5. 커뮤니티 탭 이동', 
+                        description: '산출물을 직접 업로드하고 피드백을 남길 수 있는 커뮤니티 탭으로 자동 이동합니다.', 
+                        side: 'bottom', align: 'center',
+                        onNextClick: () => {
+                            const tab = getElByText('button[data-baseweb="tab"]', '산출물 커뮤니티 및 저장소');
+                            if (tab) tab.click();
+                            setTimeout(() => driverObj.moveNext(), 800);
+                        }
+                    } 
+                },
+                { 
+                    element: () => parentDoc.querySelector('#tour-upload')?.closest('div[data-testid="stExpander"]'), 
+                    popover: { 
+                        title: '6. 산출물 업로드', 
+                        description: '이 영역을 펼쳐 직접 개발한 자동화 산출물 파일과 설명을 업로드하고 구성원들과 공유할 수 있습니다.', 
+                        side: 'bottom', align: 'start',
+                        onPrevClick: () => {
+                            const tab = getElByText('button[data-baseweb="tab"]', '대시보드 현황');
+                            if (tab) tab.click();
+                            setTimeout(() => driverObj.movePrevious(), 800);
+                        }
+                    } 
+                },
+                { 
+                    element: () => {
+                        const el = parentDoc.querySelector('.repo-card-inner')?.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                        return el || parentDoc.querySelector('#tour-repo-list')?.parentElement;
+                    }, 
+                    popover: { 
+                        title: '7. 커뮤니티 저장소 목록', 
+                        description: '공유된 산출물을 다운로드하거나 미리보고, 피드백과 이슈를 남겨 구성원들과 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 가이드를 언제든 다시 볼 수 있습니다.', 
+                        side: 'top', align: 'center' 
+                    } 
+                }
+              ]
+            });
+
+            setTimeout(() => driverObj.drive(), 800);
+        }
+
+        if (!parentDoc.getElementById('driver-js')) {
+            const script = parentDoc.createElement('script');
+            script.id = 'driver-js';
+            script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
+            script.onload = startTour;
+            parentDoc.body.appendChild(script);
+        } else {
+            startTour();
+        }
+        </script>
+        """, height=0, width=0)
+
+    # 렌더링된 트리거가 있을 경우에만 실행
+    if st.session_state.get('tour_trigger', False):
+        run_product_tour()
+        st.session_state['tour_trigger'] = False
 
 
 # ==========================================
