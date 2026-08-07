@@ -537,137 +537,165 @@ def inject_timer_js():
 
 
 # ==========================================
-# 인터랙티브 화면 하이라이팅 투어 스크립트 (Driver.js)
+# 2-1. 인터랙티브 투어 실행기 (Driver.js 완전 주입형)
 # ==========================================
 def run_product_tour():
     components.html("""
     <script>
-    const parentDoc = window.parent.document;
-    
-    if (!parentDoc.getElementById('driver-css')) {
-        const link = parentDoc.createElement('link');
-        link.id = 'driver-css';
-        link.rel = 'stylesheet';
-        link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
-        parentDoc.head.appendChild(link);
-    }
+    const parentWindow = window.parent;
+    const parentDoc = parentWindow.document;
 
-    function startTour() {
-        if (!window.parent.driver) {
-            setTimeout(startTour, 200);
-            return;
-        }
-        
-        const driver = window.parent.driver.js.driver;
-
-        // 안전하게 요소를 찾는 헬퍼 함수
-        const getEl = (id) => {
-            const el = parentDoc.getElementById(id);
-            if (el) {
-                // stExpander 또는 stVerticalBlock 등 주요 컨테이너를 타겟팅
-                const wrapper = el.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || el.closest('div[data-testid="stExpander"]') || el.parentElement;
-                return wrapper;
-            }
-            return null;
-        };
-
-        const d = driver({
-            showProgress: true,
-            allowClose: false, // 진행 중 외부 클릭으로 닫히는 현상 방지
-            nextBtnText: '다음',
-            prevBtnText: '이전',
-            doneBtnText: '투어 종료',
-            steps: [
-                {
-                    element: () => parentDoc.querySelector('[data-testid="stSidebar"]'),
-                    popover: { 
-                        title: '1. 사이드바 검색 및 필터', 
-                        description: '원하는 부서나 검색어를 입력하여 수많은 산출물 중 내게 필요한 항목을 빠르게 찾아볼 수 있습니다.',
-                        side: 'right', align: 'start'
-                    }
-                },
-                {
-                    element: () => getEl('tour-metrics'),
-                    popover: { 
-                        title: '2. 대시보드 현황', 
-                        description: '등록된 전체 산출물 개수, 참여자 수, 누적 피드백 등 시스템 자동화 도입 현황을 직관적으로 확인합니다.',
-                        side: 'bottom', align: 'start'
-                    }
-                },
-                {
-                    element: () => parentDoc.querySelector('div[data-baseweb="tab-list"]'),
-                    popover: {
-                        title: '3. 탭 전환',
-                        description: '다음 안내를 위해 산출물 커뮤니티 및 저장소 탭으로 이동합니다. 잠시만 기다려주세요.',
-                        side: 'bottom', align: 'start',
-                        onNextClick: () => {
-                            // 탭 자동 클릭 전환
-                            const tabs = Array.from(parentDoc.querySelectorAll('button[data-baseweb="tab"]'));
-                            const targetTab = tabs.find(t => t.innerText.includes('커뮤니티'));
-                            if (targetTab) {
-                                targetTab.click();
-                                // Streamlit DOM 업데이트 대기 후 다음 스텝 이동
-                                setTimeout(() => {
-                                    d.moveNext();
-                                }, 1200);
-                            } else {
-                                d.moveNext();
-                            }
-                        }
-                    }
-                },
-                {
-                    element: () => {
-                        const m = parentDoc.getElementById('tour-upload');
-                        if (m) {
-                            const expander = m.closest('div[data-testid="stExpander"]');
-                            if (expander) {
-                                // 업로드 창이 닫혀있다면 클릭해서 열기
-                                const summary = expander.querySelector('summary');
-                                if (summary && summary.getAttribute('aria-expanded') === 'false') {
-                                    summary.click(); 
-                                }
-                                return expander;
-                            }
-                            return m.parentElement;
-                        }
-                        return null;
-                    },
-                    popover: { 
-                        title: '4. 새로운 산출물 업로드', 
-                        description: '이 영역에서 직접 개발한 자동화 스크립트나 파일을 등록하여 다른 담당자들과 안전하게 공유할 수 있습니다.',
-                        side: 'bottom', align: 'start'
-                    }
-                },
-                {
-                    element: () => getEl('tour-repo'),
-                    popover: { 
-                        title: '5. 커뮤니티 저장소 목록', 
-                        description: '동료가 올린 산출물을 확인하고, 의견과 이슈를 남겨 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 투어를 언제든 다시 확인할 수 있습니다.',
-                        side: 'top', align: 'start'
-                    }
-                }
-            ]
-        });
-        
-        d.drive();
-    }
-
-    if (!parentDoc.getElementById('driver-js')) {
+    // 투어가 중복 실행되거나 iframe 제약으로 멈추지 않도록 부모 창(Main DOM)에 직접 로직을 삽입합니다.
+    if (!parentDoc.getElementById('tour-logic-script')) {
         const script = parentDoc.createElement('script');
-        script.id = 'driver-js';
-        script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
-        script.onload = startTour;
+        script.id = 'tour-logic-script';
+        script.innerHTML = `
+            function startMyTour() {
+                if (!window.driver) {
+                    setTimeout(startMyTour, 200);
+                    return;
+                }
+                
+                // 기존 활성화된 투어가 있다면 안전하게 제거
+                if (window.myCurrentDriver) {
+                    window.myCurrentDriver.destroy();
+                }
+
+                const driver = window.driver.js.driver;
+                
+                // Streamlit의 렌더링 요소를 정확히 찾아내기 위한 헬퍼 함수
+                const getEl = (id) => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        return el.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || el.closest('div[data-testid="stExpander"]') || el.parentElement;
+                    }
+                    return null;
+                };
+
+                const d = driver({
+                    showProgress: true,
+                    allowClose: true,
+                    nextBtnText: '다음',
+                    prevBtnText: '이전',
+                    doneBtnText: '투어 종료',
+                    steps: [
+                        {
+                            element: '[data-testid="stSidebar"]',
+                            popover: { 
+                                title: '1. 사이드바 검색 및 필터', 
+                                description: '원하는 부서나 검색어를 입력하여 수많은 산출물 중 내게 필요한 항목을 빠르게 찾아볼 수 있습니다.',
+                                side: 'right', align: 'start'
+                            }
+                        },
+                        {
+                            element: () => getEl('tour-metrics'),
+                            popover: { 
+                                title: '2. 대시보드 현황', 
+                                description: '등록된 전체 산출물 개수, 참여자 수, 누적 피드백 등 시스템 자동화 도입 현황을 직관적으로 확인합니다.',
+                                side: 'bottom', align: 'start'
+                            }
+                        },
+                        {
+                            element: () => getEl('tour-timeline'),
+                            popover: {
+                                title: '3. 부서별 제작 타임라인',
+                                description: '산출물 등록부터 완료 처리까지의 평균 소요 시간 및 타임라인을 파악합니다.',
+                                side: 'top', align: 'start'
+                            }
+                        },
+                        {
+                            element: 'div[data-baseweb="tab-list"]',
+                            popover: {
+                                title: '4. 탭 전환',
+                                description: '산출물을 직접 등록하고 조회할 수 있는 커뮤니티 탭으로 이동합니다. 다음을 눌러주세요.',
+                                side: 'bottom', align: 'start',
+                                onNextClick: () => {
+                                    // 커뮤니티 탭을 자동으로 클릭하고 UI가 그려질 때까지 대기
+                                    const tabs = Array.from(document.querySelectorAll('button[data-baseweb="tab"]'));
+                                    const targetTab = tabs.find(t => t.innerText.includes('커뮤니티'));
+                                    if (targetTab) {
+                                        targetTab.click();
+                                    }
+                                    setTimeout(() => { d.moveNext(); }, 800);
+                                }
+                            }
+                        },
+                        {
+                            element: () => {
+                                const m = document.getElementById('tour-upload');
+                                if (m) {
+                                    const expander = m.closest('div[data-testid="stExpander"]');
+                                    if (expander) {
+                                        const summary = expander.querySelector('summary');
+                                        if (summary && summary.getAttribute('aria-expanded') === 'false') {
+                                            summary.click(); 
+                                        }
+                                        return expander;
+                                    }
+                                    return m.parentElement;
+                                }
+                                return null;
+                            },
+                            popover: { 
+                                title: '5. 새로운 산출물 업로드', 
+                                description: '이 영역에서 직접 개발한 자동화 스크립트나 파일을 등록하여 다른 담당자들과 안전하게 공유할 수 있습니다.',
+                                side: 'bottom', align: 'start',
+                                onPrevClick: () => {
+                                    const tabs = Array.from(document.querySelectorAll('button[data-baseweb="tab"]'));
+                                    const targetTab = tabs.find(t => t.innerText.includes('대시보드'));
+                                    if (targetTab) {
+                                        targetTab.click();
+                                    }
+                                    setTimeout(() => { d.movePrevious(); }, 800);
+                                }
+                            }
+                        },
+                        {
+                            element: () => getEl('tour-repo'),
+                            popover: { 
+                                title: '6. 커뮤니티 저장소 목록', 
+                                description: '동료가 올린 산출물을 확인하고, 의견과 이슈를 남겨 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 투어를 언제든 다시 확인할 수 있습니다.',
+                                side: 'top', align: 'start'
+                            }
+                        }
+                    ]
+                });
+                
+                window.myCurrentDriver = d;
+                d.drive();
+            }
+
+            // CSS 의존성 주입
+            if (!document.getElementById('driver-css')) {
+                const link = document.createElement('link');
+                link.id = 'driver-css';
+                link.rel = 'stylesheet';
+                link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
+                document.head.appendChild(link);
+            }
+
+            // Javascript 의존성 주입 및 실행
+            if (!document.getElementById('driver-js-lib')) {
+                const script = document.createElement('script');
+                script.id = 'driver-js-lib';
+                script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
+                script.onload = startMyTour;
+                document.head.appendChild(script);
+            } else {
+                startMyTour();
+            }
+        `;
         parentDoc.body.appendChild(script);
     } else {
-        startTour();
+        // 이미 스크립트가 주입되어 있다면 함수만 재실행
+        parentWindow.startMyTour();
     }
     </script>
     """, height=0, width=0)
 
 
 # ==========================================
-# 2-1. 디자인 토큰 & 전역 스타일
+# 2-3. 디자인 토큰 & 전역 스타일
 # ==========================================
 def inject_design_system():
     st.markdown("""
@@ -1145,7 +1173,7 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 미팅 일정을 메신저를 통해 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 미팅 일정을 메신저를 통해 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
@@ -1480,7 +1508,7 @@ def show_main_page():
 
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
-        st.markdown("<div id='tour-metrics'></div>", unsafe_allow_html=True)
+        st.markdown("<span id='tour-metrics'></span>", unsafe_allow_html=True)
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"<div class='metric-card'><div class='label'>전체 프로젝트</div><div class='value'>{total_projects}</div><div class='sub'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
@@ -1551,7 +1579,7 @@ def show_main_page():
                     st.info("등록된 프로젝트가 없어 부서 분포를 표시할 수 없습니다.")
 
         st.write("<br>", unsafe_allow_html=True)
-        st.markdown("##### 부서별 제작 타임라인")
+        st.markdown("<span id='tour-timeline'></span>##### 부서별 제작 타임라인", unsafe_allow_html=True)
         st.caption("등록일부터 완료 처리일까지의 제작 소요 기간을 보여줍니다. (저장소에서 삭제된 산출물은 집계에서 제외됩니다)")
         with st.container(border=True):
             render_department_timeline()
@@ -1593,7 +1621,7 @@ def show_main_page():
         st.write("<br>", unsafe_allow_html=True)
 
         with st.expander("새로운 산출물(결과물) 업로드 하기", expanded=False):
-            st.markdown("<div id='tour-upload'></div>", unsafe_allow_html=True)
+            st.markdown("<span id='tour-upload'></span>", unsafe_allow_html=True)
             my_dept = get_user_dept(current_user_id)
             st.info(f"업로드 시 부서는 회원가입 시 등록하신 **[{my_dept}]** 으로 자동 지정됩니다.")
             with st.form("upload_form", clear_on_submit=True):
@@ -2000,134 +2028,6 @@ def show_main_page():
                     mime="text/csv",
                     use_container_width=True
                 )
-
-    # ----------------------------------------------------
-    # 실제 화면 요소 하이라이팅 투어 구동 스크립트
-    # ----------------------------------------------------
-    def run_product_tour():
-        components.html("""
-        <script>
-        const parentDoc = window.parent.document;
-        
-        if (!parentDoc.getElementById('driver-css')) {
-            const link = parentDoc.createElement('link');
-            link.id = 'driver-css';
-            link.rel = 'stylesheet';
-            link.href = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css';
-            parentDoc.head.appendChild(link);
-        }
-
-        function startTour() {
-            if (!window.parent.driver) {
-                setTimeout(startTour, 200);
-                return;
-            }
-            
-            const driver = window.parent.driver.js.driver;
-
-            const getEl = (id) => {
-                const el = parentDoc.getElementById(id);
-                if (el) {
-                    const wrapper = el.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || el.closest('div[data-testid="stExpander"]') || el.parentElement;
-                    return wrapper;
-                }
-                return null;
-            };
-
-            const d = driver({
-                showProgress: true,
-                allowClose: false,
-                nextBtnText: '다음',
-                prevBtnText: '이전',
-                doneBtnText: '투어 종료',
-                steps: [
-                    {
-                        element: () => parentDoc.querySelector('[data-testid="stSidebar"]'),
-                        popover: { 
-                            title: '1. 사이드바 검색 및 필터', 
-                            description: '원하는 부서나 검색어를 입력하여 수많은 산출물 중 내게 필요한 항목을 빠르게 찾아볼 수 있습니다.',
-                            side: 'right', align: 'start'
-                        }
-                    },
-                    {
-                        element: () => getEl('tour-metrics'),
-                        popover: { 
-                            title: '2. 대시보드 현황', 
-                            description: '등록된 전체 산출물 개수, 참여자 수, 누적 피드백 등 시스템 자동화 도입 현황을 직관적으로 확인합니다.',
-                            side: 'bottom', align: 'start'
-                        }
-                    },
-                    {
-                        element: () => parentDoc.querySelector('div[data-baseweb="tab-list"]'),
-                        popover: {
-                            title: '3. 탭 전환',
-                            description: '다음 안내를 위해 산출물 커뮤니티 및 저장소 탭으로 자동 이동합니다. 잠시만 기다려주세요.',
-                            side: 'bottom', align: 'start',
-                            onNextClick: () => {
-                                const tabs = Array.from(parentDoc.querySelectorAll('button[data-baseweb="tab"]'));
-                                const targetTab = tabs.find(t => t.innerText.includes('커뮤니티'));
-                                if (targetTab) {
-                                    targetTab.click();
-                                    setTimeout(() => {
-                                        d.moveNext();
-                                    }, 1200);
-                                } else {
-                                    d.moveNext();
-                                }
-                            }
-                        }
-                    },
-                    {
-                        element: () => {
-                            const m = parentDoc.getElementById('tour-upload');
-                            if (m) {
-                                const expander = m.closest('div[data-testid="stExpander"]');
-                                if (expander) {
-                                    const summary = expander.querySelector('summary');
-                                    if (summary && summary.getAttribute('aria-expanded') === 'false') {
-                                        summary.click(); 
-                                    }
-                                    return expander;
-                                }
-                                return m.parentElement;
-                            }
-                            return null;
-                        },
-                        popover: { 
-                            title: '4. 새로운 산출물 업로드', 
-                            description: '이 영역에서 직접 개발한 자동화 스크립트나 파일을 등록하여 다른 담당자들과 안전하게 공유할 수 있습니다.',
-                            side: 'bottom', align: 'start'
-                        }
-                    },
-                    {
-                        element: () => getEl('tour-repo'),
-                        popover: { 
-                            title: '5. 커뮤니티 저장소 목록', 
-                            description: '동료가 올린 산출물을 확인하고, 의견과 이슈를 남겨 함께 개선해 나갈 수 있습니다. 우측 상단의 이용 안내 버튼을 누르면 본 투어를 언제든 다시 확인할 수 있습니다.',
-                            side: 'top', align: 'start'
-                        }
-                    }
-                ]
-            });
-            
-            d.drive();
-        }
-
-        if (!parentDoc.getElementById('driver-js')) {
-            const script = parentDoc.createElement('script');
-            script.id = 'driver-js';
-            script.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js';
-            script.onload = startTour;
-            parentDoc.body.appendChild(script);
-        } else {
-            startTour();
-        }
-        </script>
-        """, height=0, width=0)
-
-    if st.session_state.get('tour_trigger', False):
-        run_product_tour()
-        st.session_state['tour_trigger'] = False
 
 
 # ==========================================
