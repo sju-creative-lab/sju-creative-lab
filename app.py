@@ -906,20 +906,24 @@ def _render_signup_confirm_body():
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("다시 입력하기", key="signup_confirm_cancel", use_container_width=True):
-            st.session_state['pending_signup'] = None
-            st.session_state['show_signup_confirm'] = False
-            st.rerun()
+        btn_cancel = st.button("다시 입력하기", key="signup_confirm_cancel", use_container_width=True)
     with c2:
-        if st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary"):
-            # 완료 버튼 클릭 시 애니메이션 추가
-            with st.spinner("계정 생성하고 있어요. 조금만 기다려주세요"):
-                ok = finalize_signup(pending)
-            st.session_state['pending_signup'] = None
-            st.session_state['show_signup_confirm'] = False
-            if ok:
-                st.session_state['signup_success_msg'] = f"[{pending['id']}] 계정이 생성되었습니다. 바로 로그인하실 수 있습니다."
-            st.rerun()
+        btn_done = st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary")
+
+    # 버튼 클릭 여부에 따른 로직을 컬럼 밖에서 처리하여 스피너가 전체 너비를 사용하도록 변경
+    if btn_cancel:
+        st.session_state['pending_signup'] = None
+        st.session_state['show_signup_confirm'] = False
+        st.rerun()
+
+    if btn_done:
+        with st.spinner("계정 생성하고 있어요. 조금만 기다려주세요"):
+            ok = finalize_signup(pending)
+        st.session_state['pending_signup'] = None
+        st.session_state['show_signup_confirm'] = False
+        if ok:
+            st.session_state['signup_success_msg'] = f"[{pending['id']}] 계정이 생성되었습니다. 바로 로그인하실 수 있습니다."
+        st.rerun()
 
 
 if hasattr(st, "dialog"):
