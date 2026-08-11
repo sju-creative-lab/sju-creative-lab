@@ -38,7 +38,7 @@ def safe_show_logo(width=None, use_container_width=False):
             st.markdown(
                 "<div style='text-align:center; padding:14px; border:1px dashed var(--border); "
                 "border-radius:12px; color:var(--muted-foreground); font-size:12px;'>"
-                "로고 이미지를 찾을 수 없습니다.<br>저장소에 파일을 업로드해 주세요."
+                "로고 이미지를 찾을 수 없습니다.<br>실험실에 파일을 업로드해 주세요."
                 "</div>",
                 unsafe_allow_html=True
             )
@@ -958,7 +958,7 @@ def show_login_page():
             st.markdown("""
                 <div style='text-align:center; margin-top:14px;'>
                     <h2 style='text-align: center; margin-top: 4px;'>
-                        교육혁신처 AI Creative Lab <span class='gradient-text'>산출물 저장소</span>
+                        교육혁신처 AI Creative Lab <span class='gradient-text'>포털</span>
                     </h2>
                     <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>
                         대학 구성원의 개발 산출물을 안전하게 공유하고 관리하세요
@@ -1294,7 +1294,7 @@ def render_department_timeline():
         avg_df["소요시간(시간)"] = avg_df["소요시간(시간)"].round(1)
         st.dataframe(avg_df, use_container_width=True, hide_index=True)
     else:
-        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 커뮤니티 저장소 목록에서 산출물을 '완료 처리'해 보세요.")
+        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 실험실 목록에서 산출물을 '완료 처리'해 보세요.")
 
 
 # ==========================================
@@ -1319,7 +1319,7 @@ def show_main_page():
     display_name = get_display_name(current_user_id)
 
     with col_title:
-        st.markdown(f"### 교육혁신처 AI Creative Lab 산출물 저장소(GitHub) <span class='gradient-text'>프로젝트 현황</span>", unsafe_allow_html=True)
+        st.markdown(f"### AI 교육혁신처 실험실 포털(GitHub) <span class='gradient-text'>프로젝트 현황</span>", unsafe_allow_html=True)
         st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
@@ -1361,9 +1361,9 @@ def show_main_page():
     is_admin = is_user_admin(current_user_id)
 
     if is_admin:
-        tab1, tab2, tab3, tab4 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소", "계정 관리", "현황 조사 제출 관리"])
+        tab1, tab2, tab3, tab4 = st.tabs(["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"])
     else:
-        tab1, tab2 = st.tabs(["대시보드 현황", "산출물 커뮤니티 및 저장소"])
+        tab1, tab2 = st.tabs(["대시보드 현황", "실험실"])
 
     # ---------------- 탭 1: 대시보드 현황 ----------------
     with tab1:
@@ -1438,7 +1438,7 @@ def show_main_page():
 
         st.write("<br>", unsafe_allow_html=True)
         st.markdown("##### 부서별 제작 타임라인")
-        st.caption("등록일부터 완료 처리일까지의 제작 소요 기간을 보여줍니다. (저장소에서 삭제된 산출물은 집계에서 제외됩니다)")
+        st.caption("등록일부터 완료 처리일까지의 제작 소요 기간을 보여줍니다. (실험실에서 삭제된 산출물은 집계에서 제외됩니다)")
         with st.container(border=True):
             render_department_timeline()
 
@@ -1452,7 +1452,7 @@ def show_main_page():
             if repo_data_all:
                 st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
             else:
-                st.info("등록된 산출물 프로젝트가 없습니다. [산출물 커뮤니티 및 저장소] 탭에서 등록해 주세요.")
+                st.info("등록된 산출물 프로젝트가 없습니다. [실험실] 탭에서 등록해 주세요.")
         else:
             current_dash_page = render_pagination(len(dashboard_filtered), 'dashboard_page', 'dash_bottom')
             start_idx = (current_dash_page - 1) * PAGE_SIZE
@@ -1463,7 +1463,7 @@ def show_main_page():
 
     # ---------------- 탭 2: 산출물 커뮤니티 및 저장소 ----------------
     with tab2:
-        st.markdown("### 산출물 커뮤니티 및 저장소")
+        st.markdown("### 실험실")
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
 
         rm1, rm2, rm3, rm4 = st.columns(4)
@@ -1490,9 +1490,9 @@ def show_main_page():
                 )
                 st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML 파일은 새 창에서 미리보기가 가능합니다.")
 
-                if st.form_submit_button("저장소에 배포하기", use_container_width=True):
+                if st.form_submit_button("실험실에 배포하기", use_container_width=True):
                     if proj_name and uploaded_file:
-                        with st.spinner("산출물을 저장소에 업로드하는 중입니다..."):
+                        with st.spinner("산출물을 실험실에 업로드하는 중입니다..."):
                             existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
                             new_id = max(existing_ids) + 1 if existing_ids else 1
                             auto_dept = get_user_dept(current_user_id)
@@ -1531,7 +1531,7 @@ def show_main_page():
 
         h1, h2 = st.columns([4, 2])
         with h1:
-            st.markdown(f"#### 커뮤니티 저장소 목록{filter_desc}")
+            st.markdown(f"#### 실험실 업로드 목록{filter_desc}")
         with h2:
             st.markdown(f"<div style='text-align:right; padding-top:8px; color:var(--muted-foreground); font-size:13px;'>정렬: {st.session_state.get(_sort_key, '최근 활동순')} · 총 {len(filtered_repo)}건</div>", unsafe_allow_html=True)
 
