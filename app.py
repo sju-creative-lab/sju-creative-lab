@@ -960,8 +960,7 @@ def show_login_page():
                     <h2 style='text-align: center; margin-top: 4px;'>
                         AI 교육혁신처 실험실 <span class='gradient-text'>포털</span>
                     </h2>
-                    <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>
-                        대학 구성원의 개발 산출물을 안전하게 공유하고 관리하세요
+                    <p style='text-align:center; color:var(--muted-foreground); font-size:14px; margin-top:-6px;'>  
                     </p>
                 </div>
             """, unsafe_allow_html=True)
