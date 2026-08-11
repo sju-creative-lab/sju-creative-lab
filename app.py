@@ -20,7 +20,7 @@ AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
 PAGE_SIZE = 10
 
-st.set_page_config(page_title="교육혁신처 AI Creative Lab 산출물 저장소", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AI 교육혁신처 실험실 포털", layout="wide", initial_sidebar_state="expanded")
 
 
 def now_kst():
