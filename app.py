@@ -1895,7 +1895,7 @@ def show_sidebar():
         col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
         with col_side2:
             safe_show_logo(use_container_width=True)
-        st.markdown("<h3 style='text-align:center;'>교육혁신처 AI Creative Lab</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align:center;'>AI 교육혁신처 실험실 포털</h3>", unsafe_allow_html=True)
         st.markdown("---")
 
         cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
@@ -1920,7 +1920,7 @@ def show_sidebar():
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("""
             <div class='sidebar-brand-card'>
-                <h4 style='color: var(--foreground); margin-bottom: 5px;'>교육혁신처 AI Creative Lab</h4>
+                <h4 style='color: var(--foreground); margin-bottom: 5px;'>AI 교육혁신처 실험실 포털</h4>
                 <p style='font-size: 13px; color: var(--muted-foreground);'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p>
                 <div class='tag'>Idea to Impact</div>
             </div>
