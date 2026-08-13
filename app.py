@@ -165,7 +165,6 @@ def load_data():
                             role = "admin" if role_raw == "admin" else "user"
                             approved = True
                             
-                            # [핵심] 시트의 제출여부 값을 가장 엄격하게 파싱 (잘못된 True 변환 방지)
                             if 'SurveyCompleted' in users_df.columns:
                                 raw_sc = row['SurveyCompleted']
                                 if pd.isna(raw_sc):
@@ -436,13 +435,12 @@ def save_data(data):
 
 
 # ==========================================
-# [완벽 수정] 초기 로딩 스플래시 화면 렌더링 영역 (문자열 강제 노출 버그 차단)
+# 초기 로딩 스플래시 화면 렌더링 영역
 # ==========================================
 if 'app_data' not in st.session_state:
     splash_placeholder = st.empty()
     
     with splash_placeholder.container():
-        # 마크다운 코드블록 버그를 막기 위해 파이썬의 단일 문자열 결합 방식 사용 (들여쓰기/줄바꿈 원천제거)
         splash_html = (
             "<style>"
             "[data-testid='stSidebar'], [data-testid='stHeader'] { display: none !important; }"
@@ -452,7 +450,7 @@ if 'app_data' not in st.session_state:
             "</style>"
             "<div style='text-align: center; font-family: Pretendard, -apple-system, sans-serif; animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;'>"
             "<h2 style='color: #0F172A; font-size: 26px; font-weight: 800; margin: 30px 0 10px 0; letter-spacing: -0.03em;'>AI 교육혁신처 실험실 포털</h2>"
-            "<p style='color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;'>더 나은 내일을 함께합니다.</p>"
+            "<p style='color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;'>Be the Power of the World</p>"
             "<div style='width: 100%; max-width: 280px; margin: 0 auto;'>"
             "<div style='width: 100%; height: 4px; background-color: #E2E8F0; border-radius: 4px; overflow: hidden; margin-bottom: 14px;'>"
             "<div style='height: 100%; background: linear-gradient(90deg, #0052FF, #4D7CFF); border-radius: 4px; animation: loadingBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;'></div>"
@@ -480,7 +478,6 @@ if 'logged_in' not in st.session_state:
         st.session_state['user_id'] = uid
         st.session_state['last_activity'] = now_kst()
         
-        # [추가] 새로고침 발생 시: 해당 유저가 현황조사 미제출자라면 '비정상 접근' 플래그 켜기
         users_db = st.session_state.get('app_data', {}).get('users_db', {})
         uinfo = users_db.get(uid, {})
         if not bool(uinfo.get('survey_completed', False)):
@@ -1007,7 +1004,7 @@ else:
             _render_signup_confirm_body()
 
 # ==========================================
-# [추가] 비정상 접근 안내 팝업 (현황조사 미제출자)
+# 비정상 접근 안내 팝업 (현황조사 미제출자)
 # ==========================================
 def _render_abnormal_access_body():
     st.markdown("현황조사가 정상적으로 제출되지 않은 비정상적인 접근입니다.<br>모든 항목에 대해 내용 입력 후 제출 버튼을 눌러주시기 바랍니다.", unsafe_allow_html=True)
@@ -1191,7 +1188,7 @@ def show_survey_page():
             if not improvement.strip(): empty_fields.append("개선 필요사항")
 
             if empty_fields:
-                st.error(f"필수 항목이 누락되었습니다! 제출을 위해 아래의 미입력 항목을 작성해 주세요:\n\n**{', '.join(empty_fields)}**")
+                st.error(f"필수 항목이 누락되었습니다. 제출을 위해 아래의 미입력 항목을 작성해 주세요:\n\n**{', '.join(empty_fields)}**")
             else:
                 with st.spinner("입력하신 현황 조사 양식을 제출하고 있어요. 조금만 기다려주세요."):
                     survey_data = {
@@ -1360,14 +1357,23 @@ def render_department_timeline():
     timeline_df = pd.DataFrame(rows)
     timeline_df = timeline_df.sort_values("시작")
 
+    # [추가] 차트 툴팁(Hover)과 X축 날짜/시간 포맷을 한국식 년/월/일 포맷으로 변경
     fig = px.timeline(
         timeline_df, x_start="시작", x_end="종료", y="프로젝트명",
         color="상태",
         color_discrete_map={"완료": "#0052FF", "진행중": "#C7D6FF"},
-        hover_data={"부서": True, "담당자": True, "상태": True, "프로젝트명": False}
+        hover_data={
+            "부서": True, 
+            "담당자": True, 
+            "상태": True, 
+            "프로젝트명": False,
+            "시작": "|%Y년 %m월 %d일 %H:%M",
+            "종료": "|%Y년 %m월 %d일 %H:%M"
+        }
     )
     fig.update_yaxes(autorange="reversed", title="", categoryorder="array", categoryarray=timeline_df["프로젝트명"].tolist())
-    fig.update_xaxes(title="")
+    fig.update_xaxes(title="", tickformat="%Y년 %m월 %d일 %H:%M")
+    
     fig.update_traces(marker_line_width=0, opacity=0.95)
     fig.update_layout(
         height=max(220, 46 * len(timeline_df)),
@@ -1397,12 +1403,11 @@ def render_department_timeline():
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
-    # [추가] 메인 페이지 강제 진입 차단 로직
     current_user_id = st.session_state.get('user_id', '')
     users_db = st.session_state.get('app_data', {}).get('users_db', {})
     uinfo = users_db.get(current_user_id, {})
     
-    if not bool(uinfo.get('survey_completed', False)):
+    if not uinfo.get('survey_completed', False):
         st.session_state['show_abnormal_popup'] = True
         st.rerun()
 
@@ -2042,7 +2047,6 @@ else:
     uinfo = users_db.get(user_id, {})
     is_completed = bool(uinfo.get('survey_completed', False))
 
-    # 안내 팝업이 띄워져야 하는 플래그 상태거나 현황조사가 제출되지 않은 경우
     if st.session_state.get('show_survey_success', False):
         st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
         show_survey_page()
