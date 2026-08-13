@@ -411,61 +411,60 @@ def save_data(data):
 
 
 # ==========================================
-# [추가] 초기 로딩 스플래시 화면 렌더링 영역
+# [수정 완료] 초기 로딩 스플래시 화면 렌더링 영역
 # ==========================================
 if 'app_data' not in st.session_state:
-    # 1. 스플래시 화면을 담을 빈 컨테이너 생성
     splash_placeholder = st.empty()
     
-    # 2. 데이터를 불러오는 동안 사용자에게 보여줄 로딩 HTML/CSS 렌더링
     with splash_placeholder.container():
+        # CSS를 통해 스플래시가 동작할 때만 앱의 기본 사이드바와 헤더를 감춤
         st.markdown("""
         <style>
-        #app-splash-overlay {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background-color: #F8FAFC;
-            z-index: 9999999;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
+        [data-testid="stSidebar"], [data-testid="stHeader"] { display: none !important; }
+        .stApp { background-color: #F8FAFC !important; }
+        
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .app-splash-spinner {
-            width: 55px; height: 55px;
-            border: 5px solid #E2E8F0;
-            border-top-color: #0052FF;
-            border-radius: 50%;
-            animation: app-splash-spin 1s linear infinite;
-            margin-bottom: 24px;
-        }
-        @keyframes app-splash-spin {
-            to { transform: rotate(360deg); }
-        }
-        .app-splash-title {
-            color: #0F172A;
-            font-size: 22px;
-            font-weight: 700;
-            margin: 0 0 8px 0;
-            font-family: 'Pretendard', -apple-system, sans-serif;
-        }
-        .app-splash-subtitle {
-            color: #64748B;
-            font-size: 15px;
-            margin: 0;
-            font-family: 'Pretendard', -apple-system, sans-serif;
+        @keyframes loadingBar {
+            0% { width: 0%; }
+            20% { width: 35%; }
+            50% { width: 65%; }
+            100% { width: 95%; }
         }
         </style>
-        <div id="app-splash-overlay">
-            <div class="app-splash-spinner"></div>
-            <h2 class="app-splash-title">AI 교육혁신처 실험실 포털</h2>
-            <p class="app-splash-subtitle">환경을 구성하고 데이터를 연동하고 있습니다. 잠시만 기다려주세요...</p>
+        """, unsafe_allow_html=True)
+        
+        # 세로 중앙정렬 여백
+        st.write("<br>"*5, unsafe_allow_html=True)
+        
+        # 1. Base64 에러 원천 차단: Streamlit의 자체 컬럼과 이미지 함수(safe_show_logo) 사용
+        c1, c2, c3 = st.columns([2, 1.2, 2])
+        with c2:
+            safe_show_logo(use_container_width=True)
+            
+        # 2. 텍스트 및 프로그레스 바 영역
+        st.markdown("""
+        <div style="text-align: center; font-family: 'Pretendard', -apple-system, sans-serif; animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;">
+            <h2 style="color: #0F172A; font-size: 26px; font-weight: 800; margin: 30px 0 10px 0; letter-spacing: -0.03em;">AI 교육혁신처 실험실 포털</h2>
+            <p style="color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;">더 나은 내일을 함께합니다.</p>
+            
+            <div style="width: 100%; max-width: 280px; margin: 0 auto;">
+                <div style="width: 100%; height: 4px; background-color: #E2E8F0; border-radius: 4px; overflow: hidden; margin-bottom: 14px;">
+                    <div style="height: 100%; background: linear-gradient(90deg, #0052FF, #4D7CFF); border-radius: 4px; animation: loadingBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;"></div>
+                </div>
+                <p style="color: #64748B; font-size: 13px; margin: 0; font-weight: 500;">잠시만 기다려 주세요.</p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
-    # 3. 무거운 데이터 로딩 작업 실행 (구글 시트 연동 등)
+        st.write("<br>"*10, unsafe_allow_html=True)
+        
+    # 무거운 데이터 연동 실행
     st.session_state['app_data'] = load_data()
     
-    # 4. 데이터 로딩 완료 시 스플래시 컨테이너를 비워서 화면에서 즉시 제거
+    # 데이터 로딩이 완료되면 스플래시 화면을 비워서 기본 화면으로 자연스럽게 돌아감
     splash_placeholder.empty()
 
 # 새로고침 방지를 위한 세션 초기화 로직 (URL Query Parameters 활용)
@@ -931,7 +930,7 @@ def inject_design_system():
         border: 1px solid rgba(0,82,255,0.2); white-space: nowrap;
     }
     
-    /* 추가: Spinner(로딩 애니메이션) 텍스트 줄바꿈 방지 */
+    /* Spinner 텍스트 줄바꿈 방지 */
     div[data-testid="stSpinner"] p {
         white-space: nowrap !important;
     }
@@ -965,7 +964,6 @@ def _render_signup_confirm_body():
     with c2:
         btn_done = st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary")
 
-    # 버튼 클릭 여부에 따른 로직을 컬럼 밖에서 처리하여 스피너가 전체 너비를 사용하도록 변경
     if btn_cancel:
         st.session_state['pending_signup'] = None
         st.session_state['show_signup_confirm'] = False
@@ -1041,7 +1039,6 @@ def show_login_page():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
                         st.session_state['last_activity'] = now_kst()
-                        # URL 기반 로그인 복구: 새로고침 시 강제 로그아웃 방지
                         st.query_params["uid"] = user_id
                         st.rerun()
 
@@ -1084,7 +1081,7 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다.", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
@@ -1148,7 +1145,6 @@ def show_survey_page():
             if not task_name.strip():
                 st.error("업무명은 필수 입력 항목입니다.")
             else:
-                # 제출 버튼 클릭 시 애니메이션 추가
                 with st.spinner("입력하신 현황 조사 양식을 제출하고 있어요. 조금만 기다려주세요."):
                     survey_data = {
                         "부서명": dept,
@@ -1171,13 +1167,11 @@ def show_survey_page():
                     st.session_state['show_survey_success'] = True
                     st.rerun()
 
-    # 제출이 완료되어 플래그가 세워졌을 경우 팝업 호출
     if st.session_state.get('show_survey_success', False):
         show_survey_success_dialog()
         
     st.write("<br><br>", unsafe_allow_html=True)
     
-    # 폼 바로 아래 (가운데 하단)에 로고 작게 배치
     _, bottom_logo_col, _ = st.columns([4, 1.5, 4])
     with bottom_logo_col:
         safe_show_logo(use_container_width=True)
@@ -1356,7 +1350,6 @@ def render_department_timeline():
 # ==========================================
 def show_main_page():
     now = now_kst()
-    # 타임아웃 로그아웃 시 세션 정보 파기 및 URL 파라미터 초기화
     if 'last_activity' in st.session_state and now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
         keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
         for k in keys_to_clear:
@@ -1380,7 +1373,6 @@ def show_main_page():
         r1, r2, r3, r4 = st.columns([1, 1, 1, 1.5])
         with r1:
             if st.button("로그아웃", use_container_width=True):
-                # 로그아웃 버튼 클릭 시 핵심 세션 정보를 완벽히 파기하여 재로그인 유도
                 keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
                 for k in keys_to_clear:
                     if k in st.session_state:
