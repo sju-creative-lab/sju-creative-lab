@@ -165,12 +165,13 @@ def load_data():
                             role = "admin" if role_raw == "admin" else "user"
                             approved = True
                             
+                            # [핵심] 시트의 제출여부 값을 가장 엄격하게 파싱 (잘못된 True 변환 방지)
                             if 'SurveyCompleted' in users_df.columns:
                                 raw_sc = row['SurveyCompleted']
                                 if pd.isna(raw_sc):
                                     survey_completed = False
                                 elif isinstance(raw_sc, str):
-                                    survey_completed = str(raw_sc).strip().lower() in ['true', '1', 't', 'y', 'yes']
+                                    survey_completed = str(raw_sc).strip().upper() in ['TRUE', '1', 'T', 'Y', 'YES']
                                 else:
                                     survey_completed = bool(raw_sc)
                             else:
@@ -319,7 +320,7 @@ def save_data(data):
                         if pd.isna(raw_sc):
                             sc_val = False
                         elif isinstance(raw_sc, str):
-                            sc_val = str(raw_sc).strip().lower() in ['true', '1', 't', 'y', 'yes']
+                            sc_val = str(raw_sc).strip().upper() in ['TRUE', '1', 'T', 'Y', 'YES']
                         else:
                             sc_val = bool(raw_sc)
                     else:
@@ -435,52 +436,37 @@ def save_data(data):
 
 
 # ==========================================
-# 초기 로딩 스플래시 화면 렌더링 영역
+# [완벽 수정] 초기 로딩 스플래시 화면 렌더링 영역 (문자열 강제 노출 버그 차단)
 # ==========================================
 if 'app_data' not in st.session_state:
     splash_placeholder = st.empty()
     
     with splash_placeholder.container():
-        # [들여쓰기 버그 수정 완료] 마크다운 파싱 에러 방지를 위해 들여쓰기 제거
-        st.markdown("""
-<style>
-[data-testid="stSidebar"], [data-testid="stHeader"] { display: none !important; }
-.stApp { background-color: #F8FAFC !important; }
-
-@keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-@keyframes loadingBar {
-    0% { width: 0%; }
-    20% { width: 35%; }
-    50% { width: 65%; }
-    100% { width: 95%; }
-}
-</style>
-""", unsafe_allow_html=True)
+        # 마크다운 코드블록 버그를 막기 위해 파이썬의 단일 문자열 결합 방식 사용 (들여쓰기/줄바꿈 원천제거)
+        splash_html = (
+            "<style>"
+            "[data-testid='stSidebar'], [data-testid='stHeader'] { display: none !important; }"
+            ".stApp { background-color: #F8FAFC !important; }"
+            "@keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }"
+            "@keyframes loadingBar { 0% { width: 0%; } 20% { width: 35%; } 50% { width: 65%; } 100% { width: 95%; } }"
+            "</style>"
+            "<div style='text-align: center; font-family: Pretendard, -apple-system, sans-serif; animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;'>"
+            "<h2 style='color: #0F172A; font-size: 26px; font-weight: 800; margin: 30px 0 10px 0; letter-spacing: -0.03em;'>AI 교육혁신처 실험실 포털</h2>"
+            "<p style='color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;'>더 나은 내일을 함께합니다.</p>"
+            "<div style='width: 100%; max-width: 280px; margin: 0 auto;'>"
+            "<div style='width: 100%; height: 4px; background-color: #E2E8F0; border-radius: 4px; overflow: hidden; margin-bottom: 14px;'>"
+            "<div style='height: 100%; background: linear-gradient(90deg, #0052FF, #4D7CFF); border-radius: 4px; animation: loadingBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;'></div>"
+            "</div>"
+            "<p style='color: #64748B; font-size: 13px; margin: 0; font-weight: 500;'>잠시만 기다려 주세요.</p>"
+            "</div>"
+            "</div>"
+        )
         
         st.write("<br>"*5, unsafe_allow_html=True)
-        
         c1, c2, c3 = st.columns([2, 1.2, 2])
         with c2:
             safe_show_logo(use_container_width=True)
-            
-        # [들여쓰기 버그 수정 완료] 마크다운 파싱 에러 방지를 위해 HTML 들여쓰기 제거
-        st.markdown("""
-<div style="text-align: center; font-family: 'Pretendard', -apple-system, sans-serif; animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;">
-    <h2 style="color: #0F172A; font-size: 26px; font-weight: 800; margin: 30px 0 10px 0; letter-spacing: -0.03em;">AI 교육혁신처 실험실 포털</h2>
-    <p style="color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;">더 나은 내일을 함께합니다.</p>
-    
-    <div style="width: 100%; max-width: 280px; margin: 0 auto;">
-        <div style="width: 100%; height: 4px; background-color: #E2E8F0; border-radius: 4px; overflow: hidden; margin-bottom: 14px;">
-            <div style="height: 100%; background: linear-gradient(90deg, #0052FF, #4D7CFF); border-radius: 4px; animation: loadingBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;"></div>
-        </div>
-        <p style="color: #64748B; font-size: 13px; margin: 0; font-weight: 500;">잠시만 기다려 주세요.</p>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-        
+        st.markdown(splash_html, unsafe_allow_html=True)
         st.write("<br>"*10, unsafe_allow_html=True)
         
     st.session_state['app_data'] = load_data()
@@ -494,9 +480,10 @@ if 'logged_in' not in st.session_state:
         st.session_state['user_id'] = uid
         st.session_state['last_activity'] = now_kst()
         
+        # [추가] 새로고침 발생 시: 해당 유저가 현황조사 미제출자라면 '비정상 접근' 플래그 켜기
         users_db = st.session_state.get('app_data', {}).get('users_db', {})
         uinfo = users_db.get(uid, {})
-        if not uinfo.get('survey_completed', False):
+        if not bool(uinfo.get('survey_completed', False)):
             st.session_state['show_abnormal_popup'] = True
     else:
         st.session_state['logged_in'] = False
@@ -1020,7 +1007,7 @@ else:
             _render_signup_confirm_body()
 
 # ==========================================
-# 비정상 접근 안내 팝업 (현황조사 미제출자)
+# [추가] 비정상 접근 안내 팝업 (현황조사 미제출자)
 # ==========================================
 def _render_abnormal_access_body():
     st.markdown("현황조사가 정상적으로 제출되지 않은 비정상적인 접근입니다.<br>모든 항목에 대해 내용 입력 후 제출 버튼을 눌러주시기 바랍니다.", unsafe_allow_html=True)
@@ -1204,7 +1191,7 @@ def show_survey_page():
             if not improvement.strip(): empty_fields.append("개선 필요사항")
 
             if empty_fields:
-                st.error(f"필수 항목이 누락되었습니다. 제출을 위해 아래의 미입력 항목을 작성해 주세요:\n\n**{', '.join(empty_fields)}**")
+                st.error(f"필수 항목이 누락되었습니다! 제출을 위해 아래의 미입력 항목을 작성해 주세요:\n\n**{', '.join(empty_fields)}**")
             else:
                 with st.spinner("입력하신 현황 조사 양식을 제출하고 있어요. 조금만 기다려주세요."):
                     survey_data = {
@@ -1410,11 +1397,12 @@ def render_department_timeline():
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
+    # [추가] 메인 페이지 강제 진입 차단 로직
     current_user_id = st.session_state.get('user_id', '')
     users_db = st.session_state.get('app_data', {}).get('users_db', {})
     uinfo = users_db.get(current_user_id, {})
     
-    if not uinfo.get('survey_completed', False):
+    if not bool(uinfo.get('survey_completed', False)):
         st.session_state['show_abnormal_popup'] = True
         st.rerun()
 
@@ -2052,7 +2040,7 @@ else:
     user_id = st.session_state.get('user_id')
     users_db = st.session_state['app_data'].get('users_db', {})
     uinfo = users_db.get(user_id, {})
-    is_completed = uinfo.get('survey_completed', False)
+    is_completed = bool(uinfo.get('survey_completed', False))
 
     # 안내 팝업이 띄워져야 하는 플래그 상태거나 현황조사가 제출되지 않은 경우
     if st.session_state.get('show_survey_success', False):
@@ -2060,7 +2048,6 @@ else:
         show_survey_page()
     elif not is_completed:
         st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
-        # [추가] 팝업 띄우기 함수 호출
         if st.session_state.get('show_abnormal_popup', False):
             show_abnormal_access_dialog()
         show_survey_page()
