@@ -164,11 +164,23 @@ def load_data():
                             role_raw = str(row.get('Role')).strip().lower() if 'Role' in users_df.columns and pd.notna(row.get('Role')) else "user"
                             role = "admin" if role_raw == "admin" else "user"
                             approved = True
-                            survey_completed = bool(row.get('SurveyCompleted', False)) if 'SurveyCompleted' in users_df.columns and pd.notna(row.get('SurveyCompleted')) else False
+                            
+                            # [수정포인트 1] 문자열 "FALSE"를 올바르게 논리값 False로 변환
+                            if 'SurveyCompleted' in users_df.columns:
+                                raw_sc = row['SurveyCompleted']
+                                if pd.isna(raw_sc):
+                                    survey_completed = False
+                                elif isinstance(raw_sc, str):
+                                    survey_completed = str(raw_sc).strip().lower() in ['true', '1', 't', 'y', 'yes']
+                                else:
+                                    survey_completed = bool(raw_sc)
+                            else:
+                                survey_completed = False
                             
                             if uid == "admin":
                                 role = "admin"
                                 survey_completed = True
+                                
                             merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved, "role": role, "survey_completed": survey_completed}
 
                         for uid, uinfo in local_users_before_merge.items():
@@ -302,13 +314,26 @@ def save_data(data):
                     if uid in deleted_ids_set:
                         continue
                     role_raw = str(row.get('Role')).strip().lower() if 'Role' in latest_users_df.columns and pd.notna(row.get('Role')) else "user"
+                    
+                    # [수정포인트 2] 저장 직전 시트에서 불러올 때도 문자열 방어 코드 적용
+                    if 'SurveyCompleted' in latest_users_df.columns:
+                        raw_sc = row['SurveyCompleted']
+                        if pd.isna(raw_sc):
+                            sc_val = False
+                        elif isinstance(raw_sc, str):
+                            sc_val = str(raw_sc).strip().lower() in ['true', '1', 't', 'y', 'yes']
+                        else:
+                            sc_val = bool(raw_sc)
+                    else:
+                        sc_val = False
+
                     latest_users[uid] = {
                         "password": str(row['Password']),
                         "dept": str(row['Dept']) if 'Dept' in latest_users_df.columns and pd.notna(row.get('Dept')) else "",
                         "manager": str(row['Manager']) if 'Manager' in latest_users_df.columns and pd.notna(row.get('Manager')) else "",
                         "approved": True,
                         "role": "admin" if (role_raw == "admin" or uid == "admin") else "user",
-                        "survey_completed": bool(row.get('SurveyCompleted', False)) if 'SurveyCompleted' in latest_users_df.columns and pd.notna(row.get('SurveyCompleted')) else False
+                        "survey_completed": sc_val
                     }
 
             final_users = dict(latest_users)
@@ -412,7 +437,7 @@ def save_data(data):
 
 
 # ==========================================
-# [추가] 초기 로딩 스플래시 화면 렌더링 영역
+# 초기 로딩 스플래시 화면 렌더링 영역
 # ==========================================
 if 'app_data' not in st.session_state:
     # 1. 스플래시 화면을 담을 빈 컨테이너 생성
@@ -1041,7 +1066,6 @@ def show_login_page():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
                         st.session_state['last_activity'] = now_kst()
-                        # URL 기반 로그인 복구: 새로고침 시 강제 로그아웃 방지
                         st.query_params["uid"] = user_id
                         st.rerun()
 
@@ -1157,7 +1181,7 @@ def show_survey_page():
             if not improvement.strip(): empty_fields.append("개선 필요사항")
 
             if empty_fields:
-                st.error(f"🚨 필수 항목이 누락되었습니다. 제출을 위해 아래의 미입력 항목을 작성해 주세요:\n\n**{', '.join(empty_fields)}**")
+                st.error(f"필수 항목이 누락되었습니다! 제출을 위해 아래의 미입력 항목을 작성해 주세요:\n\n**{', '.join(empty_fields)}**")
             else:
                 with st.spinner("입력하신 현황 조사 양식을 제출하고 있어요. 조금만 기다려주세요."):
                     survey_data = {
