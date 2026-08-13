@@ -410,8 +410,63 @@ def save_data(data):
         st.session_state['last_save_status'] = "local_only"
 
 
+# ==========================================
+# [추가] 초기 로딩 스플래시 화면 렌더링 영역
+# ==========================================
 if 'app_data' not in st.session_state:
+    # 1. 스플래시 화면을 담을 빈 컨테이너 생성
+    splash_placeholder = st.empty()
+    
+    # 2. 데이터를 불러오는 동안 사용자에게 보여줄 로딩 HTML/CSS 렌더링
+    with splash_placeholder.container():
+        st.markdown("""
+        <style>
+        #app-splash-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background-color: #F8FAFC;
+            z-index: 9999999;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+        }
+        .app-splash-spinner {
+            width: 55px; height: 55px;
+            border: 5px solid #E2E8F0;
+            border-top-color: #0052FF;
+            border-radius: 50%;
+            animation: app-splash-spin 1s linear infinite;
+            margin-bottom: 24px;
+        }
+        @keyframes app-splash-spin {
+            to { transform: rotate(360deg); }
+        }
+        .app-splash-title {
+            color: #0F172A;
+            font-size: 22px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            font-family: 'Pretendard', -apple-system, sans-serif;
+        }
+        .app-splash-subtitle {
+            color: #64748B;
+            font-size: 15px;
+            margin: 0;
+            font-family: 'Pretendard', -apple-system, sans-serif;
+        }
+        </style>
+        <div id="app-splash-overlay">
+            <div class="app-splash-spinner"></div>
+            <h2 class="app-splash-title">AI 교육혁신처 실험실 포털</h2>
+            <p class="app-splash-subtitle">환경을 구성하고 데이터를 연동하고 있습니다. 잠시만 기다려주세요...</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # 3. 무거운 데이터 로딩 작업 실행 (구글 시트 연동 등)
     st.session_state['app_data'] = load_data()
+    
+    # 4. 데이터 로딩 완료 시 스플래시 컨테이너를 비워서 화면에서 즉시 제거
+    splash_placeholder.empty()
 
 # 새로고침 방지를 위한 세션 초기화 로직 (URL Query Parameters 활용)
 if 'logged_in' not in st.session_state:
@@ -1029,7 +1084,7 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다.", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
