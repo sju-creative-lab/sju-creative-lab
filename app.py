@@ -411,131 +411,61 @@ def save_data(data):
 
 
 # ==========================================
-# [수정] 초기 로딩 스플래시 화면 렌더링 영역
+# [추가] 초기 로딩 스플래시 화면 렌더링 영역
 # ==========================================
 if 'app_data' not in st.session_state:
+    # 1. 스플래시 화면을 담을 빈 컨테이너 생성
     splash_placeholder = st.empty()
     
-    # Base64 인코딩으로 파이썬 로컬 이미지를 HTML에 직접 삽입
-    def get_base64_of_bin_file(bin_file):
-        try:
-            with open(bin_file, 'rb') as f:
-                data = f.read()
-            return base64.b64encode(data).decode()
-        except:
-            return ""
-            
-    logo_b64 = get_base64_of_bin_file(LOGO_IMAGE)
-    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="splash-logo" alt="SJU Logo" />' if logo_b64 else ''
-    
+    # 2. 데이터를 불러오는 동안 사용자에게 보여줄 로딩 HTML/CSS 렌더링
     with splash_placeholder.container():
-        st.markdown(f"""
+        st.markdown("""
         <style>
-        #app-splash-overlay {{
+        #app-splash-overlay {
             position: fixed;
             top: 0; left: 0;
             width: 100vw; height: 100vh;
             background-color: #F8FAFC;
             z-index: 9999999;
             display: flex; flex-direction: column;
-            justify-content: space-between; align-items: center;
-            padding: 15vh 20px 8vh 20px;
-            font-family: 'Pretendard', -apple-system, sans-serif;
-        }}
-        .splash-spacer {{ flex: 1; }}
-        .splash-center {{
-            flex: 2;
-            display: flex; flex-direction: column;
             justify-content: center; align-items: center;
-            animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-        }}
-        .splash-logo {{
-            width: 110px; /* 로고 크기 조정 */
+        }
+        .app-splash-spinner {
+            width: 55px; height: 55px;
+            border: 5px solid #E2E8F0;
+            border-top-color: #0052FF;
+            border-radius: 50%;
+            animation: app-splash-spin 1s linear infinite;
             margin-bottom: 24px;
-            border-radius: 12px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.05);
-        }}
-        .splash-title {{
+        }
+        @keyframes app-splash-spin {
+            to { transform: rotate(360deg); }
+        }
+        .app-splash-title {
             color: #0F172A;
-            font-size: 26px;
-            font-weight: 800;
-            margin: 0 0 10px 0;
-            letter-spacing: -0.03em;
-        }}
-        .splash-subtitle {{
-            color: #475569;
+            font-size: 22px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            font-family: 'Pretendard', -apple-system, sans-serif;
+        }
+        .app-splash-subtitle {
+            color: #64748B;
             font-size: 15px;
             margin: 0;
-            font-weight: 500;
-            letter-spacing: -0.01em;
-        }}
-        .splash-bottom {{
-            flex: 1;
-            width: 100%; max-width: 280px;
-            display: flex; flex-direction: column;
-            justify-content: flex-end; align-items: center;
-            animation: fadeIn 1s ease-out forwards 0.5s;
-            opacity: 0;
-        }}
-        .progress-container {{
-            width: 100%; height: 4px;
-            background-color: #E2E8F0;
-            border-radius: 4px;
-            overflow: hidden;
-            margin-bottom: 14px;
-        }}
-        .progress-bar {{
-            height: 100%;
-            background: linear-gradient(90deg, #0052FF, #4D7CFF);
-            border-radius: 4px;
-            width: 0%;
-            animation: loadingBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-        }}
-        .loading-text {{
-            color: #64748B;
-            font-size: 13px;
-            margin: 0;
-            font-weight: 500;
-        }}
-        
-        @keyframes fadeUp {{
-            from {{ opacity: 0; transform: translateY(20px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
-        @keyframes fadeIn {{
-            to {{ opacity: 1; }}
-        }}
-        @keyframes loadingBar {{
-            0% {{ width: 0%; }}
-            20% {{ width: 35%; }}
-            50% {{ width: 65%; }}
-            80% {{ width: 85%; }}
-            100% {{ width: 95%; }}
-        }}
+            font-family: 'Pretendard', -apple-system, sans-serif;
+        }
         </style>
-        
         <div id="app-splash-overlay">
-            <div class="splash-spacer"></div>
-            
-            <div class="splash-center">
-                {logo_html}
-                <h2 class="splash-title">AI 교육혁신처 실험실 포털</h2>
-                <p class="splash-subtitle">더 나은 내일을 함께합니다.</p>
-            </div>
-            
-            <div class="splash-bottom">
-                <div class="progress-container">
-                    <div class="progress-bar"></div>
-                </div>
-                <p class="loading-text">잠시만 기다려 주세요.</p>
-            </div>
+            <div class="app-splash-spinner"></div>
+            <h2 class="app-splash-title">AI 교육혁신처 실험실 포털</h2>
+            <p class="app-splash-subtitle">환경을 구성하고 데이터를 연동하고 있습니다. 잠시만 기다려주세요...</p>
         </div>
         """, unsafe_allow_html=True)
         
-    # 구글 시트 연동 등 무거운 데이터 로딩 작업 실행
+    # 3. 무거운 데이터 로딩 작업 실행 (구글 시트 연동 등)
     st.session_state['app_data'] = load_data()
     
-    # 데이터 로딩 완료 시 스플래시 화면 지우기
+    # 4. 데이터 로딩 완료 시 스플래시 컨테이너를 비워서 화면에서 즉시 제거
     splash_placeholder.empty()
 
 # 새로고침 방지를 위한 세션 초기화 로직 (URL Query Parameters 활용)
@@ -1154,7 +1084,7 @@ def show_login_page():
 # 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
 # ==========================================
 def _render_survey_success_body():
-    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
+    st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 '잔디' 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
     if st.button("확인하였습니다.", use_container_width=True, type="primary"):
         st.session_state['show_survey_success'] = False
