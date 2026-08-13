@@ -165,7 +165,6 @@ def load_data():
                             role = "admin" if role_raw == "admin" else "user"
                             approved = True
                             
-                            # [수정포인트 1] 문자열 "FALSE"를 올바르게 논리값 False로 변환
                             if 'SurveyCompleted' in users_df.columns:
                                 raw_sc = row['SurveyCompleted']
                                 if pd.isna(raw_sc):
@@ -315,7 +314,6 @@ def save_data(data):
                         continue
                     role_raw = str(row.get('Role')).strip().lower() if 'Role' in latest_users_df.columns and pd.notna(row.get('Role')) else "user"
                     
-                    # [수정포인트 2] 저장 직전 시트에서 불러올 때도 문자열 방어 코드 적용
                     if 'SurveyCompleted' in latest_users_df.columns:
                         raw_sc = row['SurveyCompleted']
                         if pd.isna(raw_sc):
@@ -440,66 +438,65 @@ def save_data(data):
 # 초기 로딩 스플래시 화면 렌더링 영역
 # ==========================================
 if 'app_data' not in st.session_state:
-    # 1. 스플래시 화면을 담을 빈 컨테이너 생성
     splash_placeholder = st.empty()
     
-    # 2. 데이터를 불러오는 동안 사용자에게 보여줄 로딩 HTML/CSS 렌더링
     with splash_placeholder.container():
         st.markdown("""
         <style>
-        #app-splash-overlay {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background-color: #F8FAFC;
-            z-index: 9999999;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
+        [data-testid="stSidebar"], [data-testid="stHeader"] { display: none !important; }
+        .stApp { background-color: #F8FAFC !important; }
+        
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .app-splash-spinner {
-            width: 55px; height: 55px;
-            border: 5px solid #E2E8F0;
-            border-top-color: #0052FF;
-            border-radius: 50%;
-            animation: app-splash-spin 1s linear infinite;
-            margin-bottom: 24px;
-        }
-        @keyframes app-splash-spin {
-            to { transform: rotate(360deg); }
-        }
-        .app-splash-title {
-            color: #0F172A;
-            font-size: 22px;
-            font-weight: 700;
-            margin: 0 0 8px 0;
-            font-family: 'Pretendard', -apple-system, sans-serif;
-        }
-        .app-splash-subtitle {
-            color: #64748B;
-            font-size: 15px;
-            margin: 0;
-            font-family: 'Pretendard', -apple-system, sans-serif;
+        @keyframes loadingBar {
+            0% { width: 0%; }
+            20% { width: 35%; }
+            50% { width: 65%; }
+            100% { width: 95%; }
         }
         </style>
-        <div id="app-splash-overlay">
-            <div class="app-splash-spinner"></div>
-            <h2 class="app-splash-title">AI 교육혁신처 실험실 포털</h2>
-            <p class="app-splash-subtitle">환경을 구성하고 데이터를 연동하고 있습니다. 잠시만 기다려주세요...</p>
+        """, unsafe_allow_html=True)
+        
+        st.write("<br>"*5, unsafe_allow_html=True)
+        
+        c1, c2, c3 = st.columns([2, 1.2, 2])
+        with c2:
+            safe_show_logo(use_container_width=True)
+            
+        st.markdown("""
+        <div style="text-align: center; font-family: 'Pretendard', -apple-system, sans-serif; animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;">
+            <h2 style="color: #0F172A; font-size: 26px; font-weight: 800; margin: 30px 0 10px 0; letter-spacing: -0.03em;">AI 교육혁신처 실험실 포털</h2>
+            <p style="color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;">더 나은 내일을 함께합니다.</p>
+            
+            <div style="width: 100%; max-width: 280px; margin: 0 auto;">
+                <div style="width: 100%; height: 4px; background-color: #E2E8F0; border-radius: 4px; overflow: hidden; margin-bottom: 14px;">
+                    <div style="height: 100%; background: linear-gradient(90deg, #0052FF, #4D7CFF); border-radius: 4px; animation: loadingBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;"></div>
+                </div>
+                <p style="color: #64748B; font-size: 13px; margin: 0; font-weight: 500;">잠시만 기다려 주세요.</p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
-    # 3. 무거운 데이터 로딩 작업 실행 (구글 시트 연동 등)
+        st.write("<br>"*10, unsafe_allow_html=True)
+        
     st.session_state['app_data'] = load_data()
-    
-    # 4. 데이터 로딩 완료 시 스플래시 컨테이너를 비워서 화면에서 즉시 제거
     splash_placeholder.empty()
 
 # 새로고침 방지를 위한 세션 초기화 로직 (URL Query Parameters 활용)
 if 'logged_in' not in st.session_state:
     if "uid" in st.query_params and st.query_params["uid"] in st.session_state.get('app_data', {}).get('users_db', {}):
         st.session_state['logged_in'] = True
-        st.session_state['user_id'] = st.query_params["uid"]
+        uid = st.query_params["uid"]
+        st.session_state['user_id'] = uid
         st.session_state['last_activity'] = now_kst()
+        
+        # [수정] 새로고침 발생 시: 해당 유저가 현황조사 미제출자라면 '비정상 접근' 플래그 켜기
+        users_db = st.session_state.get('app_data', {}).get('users_db', {})
+        uinfo = users_db.get(uid, {})
+        if not uinfo.get('survey_completed', False):
+            st.session_state['show_abnormal_popup'] = True
     else:
         st.session_state['logged_in'] = False
 
@@ -1021,6 +1018,31 @@ else:
             st.markdown("#### 회원가입 정보 확인")
             _render_signup_confirm_body()
 
+# ==========================================
+# [추가] 비정상 접근 안내 팝업 (현황조사 미제출자)
+# ==========================================
+def _render_abnormal_access_body():
+    st.markdown("현황조사가 정상적으로 제출되지 않은 비정상적인 접근입니다.<br>모든 항목에 대해 내용 입력 후 제출 버튼을 눌러주시기 바랍니다.", unsafe_allow_html=True)
+    st.write("")
+    if st.button("닫기", use_container_width=True):
+        st.session_state['show_abnormal_popup'] = False
+        st.rerun()
+
+if hasattr(st, "dialog"):
+    @st.dialog("접근 안내")
+    def show_abnormal_access_dialog():
+        _render_abnormal_access_body()
+elif hasattr(st, "experimental_dialog"):
+    @st.experimental_dialog("접근 안내")
+    def show_abnormal_access_dialog():
+        _render_abnormal_access_body()
+else:
+    def show_abnormal_access_dialog():
+        st.markdown("---")
+        with st.container(border=True):
+            st.markdown("#### 접근 안내")
+            _render_abnormal_access_body()
+
 
 # ==========================================
 # 3. 로그인 및 회원가입 화면
@@ -1066,6 +1088,7 @@ def show_login_page():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user_id
                         st.session_state['last_activity'] = now_kst()
+                        # URL 기반 로그인 복구: 새로고침 시 강제 로그아웃 방지
                         st.query_params["uid"] = user_id
                         st.rerun()
 
@@ -1387,17 +1410,17 @@ def render_department_timeline():
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
+    # [수정] 메인 페이지 렌더링 함수에 강제 진입 시 우회 차단 로직 적용
     current_user_id = st.session_state.get('user_id', '')
     users_db = st.session_state.get('app_data', {}).get('users_db', {})
     uinfo = users_db.get(current_user_id, {})
     
     if not uinfo.get('survey_completed', False):
-        st.error("비정상적인 접근입니다. 정상적인 접근을 위해 현황조사 페이지로 이동됩니다.")
-        time.sleep(2)
+        # 팝업 플래그를 켜고 즉시 리런하여 현황조사 페이지로 쫓아냄
+        st.session_state['show_abnormal_popup'] = True
         st.rerun()
 
     now = now_kst()
-    # 타임아웃 로그아웃 시 세션 정보 파기 및 URL 파라미터 초기화
     if 'last_activity' in st.session_state and now > st.session_state['last_activity'] + timedelta(minutes=AUTO_LOGOUT_MINUTES):
         keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
         for k in keys_to_clear:
@@ -1420,7 +1443,6 @@ def show_main_page():
         r1, r2, r3, r4 = st.columns([1, 1, 1, 1.5])
         with r1:
             if st.button("로그아웃", use_container_width=True):
-                # 로그아웃 버튼 클릭 시 핵심 세션 정보를 완벽히 파기하여 재로그인 유도
                 keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
                 for k in keys_to_clear:
                     if k in st.session_state:
@@ -2040,6 +2062,9 @@ else:
         show_survey_page()
     elif not is_completed:
         st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
+        # [추가] 팝업 띄우기 함수 호출
+        if st.session_state.get('show_abnormal_popup', False):
+            show_abnormal_access_dialog()
         show_survey_page()
     else:
         show_sidebar()
