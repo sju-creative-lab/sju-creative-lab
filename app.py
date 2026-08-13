@@ -450,7 +450,7 @@ if 'app_data' not in st.session_state:
             "</style>"
             "<div style='text-align: center; font-family: Pretendard, -apple-system, sans-serif; animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;'>"
             "<h2 style='color: #0F172A; font-size: 26px; font-weight: 800; margin: 30px 0 10px 0; letter-spacing: -0.03em;'>AI 교육혁신처 실험실 포털</h2>"
-            "<p style='color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;'>Be the Power of the World</p>"
+            "<p style='color: #475569; font-size: 15px; margin: 0 0 50px 0; font-weight: 500; letter-spacing: -0.01em;'>대학 직원이 현장의 불편을 AI로 해결하는 실험 공간</p>"
             "<div style='width: 100%; max-width: 280px; margin: 0 auto;'>"
             "<div style='width: 100%; height: 4px; background-color: #E2E8F0; border-radius: 4px; overflow: hidden; margin-bottom: 14px;'>"
             "<div style='height: 100%; background: linear-gradient(90deg, #0052FF, #4D7CFF); border-radius: 4px; animation: loadingBar 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;'></div>"
