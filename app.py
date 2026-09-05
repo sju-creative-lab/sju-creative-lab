@@ -63,21 +63,18 @@ def safe_show_logo(width=None, use_container_width=False):
 # 구글 드라이브 우회 업로드 함수 (GAS 연동)
 # ------------------------------------------
 def upload_to_gdrive_and_get_link(uploaded_file):
-    # 중요: 방금 전 복사한 '웹 앱 URL'을 아래 따옴표 안에 붙여넣으세요!
     GAS_URL = "https://script.google.com/macros/s/AKfycbzhUPJU9D3A6FH9r5RPOlydHp4PjRqSw8sWfD-PZYMUfFqUewFLFdboW0JnPiOU6bA2UQ/exec"
     
-    # 파일을 Base64로 인코딩하여 전송할 준비
     file_bytes = uploaded_file.getvalue()
     file_b64 = base64.b64encode(file_bytes).decode('utf-8')
     
     payload = {
-        "secret_key": "sju_secret_2026",  # GAS 코드와 일치하는 보안 키
+        "secret_key": "sju_secret_2026",
         "file_name": uploaded_file.name,
         "mime_type": uploaded_file.type if uploaded_file.type else "application/octet-stream",
         "file_b64": file_b64
     }
     
-    # GAS 웹 앱으로 POST 요청 전송
     response = requests.post(GAS_URL, json=payload)
     
     if response.status_code == 200:
@@ -96,10 +93,7 @@ def delete_from_gdrive(file_url):
     if not file_url or "id=" not in file_url:
         return
         
-    # URL에서 구글 드라이브 고유 파일 ID만 추출
     file_id = file_url.split("id=")[-1]
-    
-    # ⚠️ 중요: 기존과 동일한 선생님의 웹 앱 URL 유지
     GAS_URL = "https://script.google.com/macros/s/AKfycbzhUPJU9D3A6FH9r5RPOlydHp4PjRqSw8sWfD-PZYMUfFqUewFLFdboW0JnPiOU6bA2UQ/exec"
     
     payload = {
@@ -111,7 +105,6 @@ def delete_from_gdrive(file_url):
     try:
         requests.post(GAS_URL, json=payload)
     except Exception as e:
-        # 삭제 실패 시 앱이 멈추지 않도록 에러만 출력 후 패스
         print(f"드라이브 파일 삭제 실패: {e}")
 
 # ==========================================
@@ -576,19 +569,16 @@ if 'show_signup_confirm' not in st.session_state:
 
 
 def get_display_name(user_id):
-    # 1. 숫자형 ID에 '.0'이 붙어오는 현상을 방지하기 위해 텍스트로 변환 후 꼬리 자르기
     clean_id = str(user_id).strip()
     if clean_id.endswith(".0"):
         clean_id = clean_id[:-2]
         
-    # 2. 정제된 아이디(clean_id)로 DB 정보 조회
     users_db = st.session_state['app_data'].get('users_db', {})
     uinfo = users_db.get(clean_id, {})
     
     dept = (uinfo.get('dept') or '').strip()
     manager = (uinfo.get('manager') or '').strip()
     
-    # 3. 담당자명 -> 부서명 -> 아이디 순서로 출력
     if manager:
         return manager
     elif dept:
@@ -1112,12 +1102,11 @@ else:
 # 3-2. 파일 미리보기 모달 팝업 (코드 & HTML)
 # ==========================================
 def _render_preview_body(filename, file_url, legacy_data):
-    import re # 구글 드라이브 경고창 우회를 위한 정규표현식 모듈
+    import re
     
     file_ext = filename.split('.')[-1].lower() if filename else ''
     content = None
     
-    # 1. 파일 데이터 가져오기 (로컬 캐시 우선, 없으면 드라이브에서 실시간 다운로드)
     if legacy_data and len(legacy_data) > 0:
         content = legacy_data
     elif file_url and str(file_url).startswith("http"):
@@ -1126,9 +1115,7 @@ def _render_preview_body(filename, file_url, legacy_data):
                 session = requests.Session()
                 r = session.get(file_url)
                 
-                # 구글 드라이브 '바이러스 검사 경고(실행 파일)' 페이지에 가로막혔는지 확인
                 if "Virus scan warning" in r.text or 'id="download-form"' in r.text:
-                    # 경고 페이지 내부에 숨겨진 '그래도 다운로드' 폼(Form)에서 필수 인증 토큰 추출
                     action_match = re.search(r'id="download-form"\s+action="([^"]+)"', r.text)
                     id_match = re.search(r'name="id"\s+value="([^"]+)"', r.text)
                     confirm_match = re.search(r'name="confirm"\s+value="([^"]+)"', r.text)
@@ -1147,10 +1134,8 @@ def _render_preview_body(filename, file_url, legacy_data):
                         if uuid_match:
                             params["uuid"] = uuid_match.group(1)
                             
-                        # 추출한 고유 토큰(uuid, confirm)을 제출하여 원본 파이썬 코드 강제 요청
                         r = session.get(download_url, params=params, cookies=r.cookies)
                     else:
-                        # 정규식 추출 실패 시 기본 덧붙임 방식으로 우회 시도
                         r = session.get(file_url + "&confirm=t", cookies=r.cookies)
 
                 if r.status_code == 200:
@@ -1166,7 +1151,6 @@ def _render_preview_body(filename, file_url, legacy_data):
         st.error("파일 데이터를 가져오지 못했습니다.")
         return
 
-    # 2. 파일 확장자에 맞게 화면 렌더링
     if file_ext in ['html', 'htm']:
         st.caption("웹 페이지(HTML) 렌더링 화면입니다.")
         try:
@@ -1183,7 +1167,6 @@ def _render_preview_body(filename, file_url, legacy_data):
         except Exception:
             st.error("텍스트로 변환할 수 없는 파일 형식이거나 인코딩 오류입니다.")
 
-# Streamlit 버전에 따른 모달 데코레이터 적용
 if hasattr(st, "dialog"):
     @st.dialog("👀 산출물 미리보기", width="large")
     def show_preview_modal(filename, file_url, legacy_data):
@@ -1634,94 +1617,56 @@ def show_main_page():
     is_admin = is_user_admin(current_user_id)
 
     menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
-    tab_count = len(menu_tabs)
     
-    st.markdown(f"""
+    st.markdown("""
         <style>
-        /* 기본 stRadio 컨테이너 숨김 속성 방지 및 블록 처리 */
-        div[data-testid="stRadio"] {{
-            width: 100%;
-        }}
-        
-        /* 라디오 버튼 그룹 전체를 회색 알약 배경으로 만듦 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] {{
-            position: relative;
-            display: flex !important;
-            flex-direction: row !important;
-            background-color: #F1F5F9 !important; /* 옅은 회색 배경 */
-            border-radius: 12px !important;
-            padding: 4px !important;
-            margin-bottom: 25px !important;
-            gap: 0px !important;
-            border: 1px solid var(--border) !important;
-            z-index: 1;
-        }}
-
-        /* 슬라이딩되는 하얀색 선택 블록 */
-        div[data-testid="stRadio"] > div[role="radiogroup"]::before {{
-            content: "";
-            position: absolute;
-            top: 4px; bottom: 4px; left: 4px;
-            width: calc((100% - 8px) / {tab_count}); /* 탭 개수에 맞게 너비 자동 계산 */
-            background-color: var(--accent); /* 트렌디한 파란색 하이라이트 */
-            border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0, 82, 255, 0.3);
-            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            z-index: -1;
-        }}
-
-        /* 위치 이동 계산 */
-        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(1) input:checked)::before {{ transform: translateX(0%); }}
-        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(2) input:checked)::before {{ transform: translateX(100%); }}
-        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(3) input:checked)::before {{ transform: translateX(200%); }}
-        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(4) input:checked)::before {{ transform: translateX(300%); }}
-
-        /* 각 버튼 영역 (균등 분할) */
-        div[data-testid="stRadio"] > div[role="radiogroup"] > label {{
-            flex: 1 1 0% !important;
+        /* 깔끔하고 투명한 텍스트 탭 스타일 (구식 동그라미 완벽 제거) */
+        div[role="radiogroup"] {
+            display: flex;
+            flex-direction: row;
+            gap: 2rem;
+            background-color: transparent !important;
+            border: none !important;
+            margin-bottom: 2rem;
+            padding: 0;
+        }
+        div[role="radiogroup"] label {
             margin: 0 !important;
-            padding: 10px 0px !important;
-            cursor: pointer !important;
+            padding: 0.5rem 0.2rem !important;
+            cursor: pointer;
             background: transparent !important;
             border: none !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            height: 100% !important;
-        }}
-
-        /* 🔴 동그란 라디오 아이콘 강제 삭제 (완벽 차단) 🔴 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child {{
+            border-bottom: 3px solid transparent !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+        div[role="radiogroup"] label:hover {
+            background: transparent !important;
+        }
+        
+        /* 라디오 동그라미 완벽 제거 */
+        div[role="radiogroup"] label > div:first-child {
             display: none !important;
-            width: 0 !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            opacity: 0 !important;
-            position: absolute !important;
-        }}
-
-        /* 텍스트 스타일 (기본) */
-        div[data-testid="stRadio"] > div[role="radiogroup"] > label p {{
-            margin: 0 !important;
-            font-size: 15px !important;
+        }
+        
+        /* 텍스트 스타일 */
+        div[role="radiogroup"] label p {
+            font-size: 16px !important;
             font-weight: 500 !important;
             color: #64748B !important;
-            transition: color 0.3s ease !important;
-            text-align: center !important;
-            width: 100% !important;
-        }}
-
-        /* 텍스트 스타일 (선택됨) - 파란색 배경 위에 하얀 글씨 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) p {{
-            color: #FFFFFF !important;
-            font-weight: 700 !important;
-        }}
-
-        /* 호버 시 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover:not(:has(input:checked)) p {{
+            margin: 0;
+        }
+        
+        /* 선택된 상태 - 파란색 굵은 밑줄 및 텍스트 색상 강조 */
+        div[role="radiogroup"] label[data-checked="true"],
+        div[role="radiogroup"] label[aria-checked="true"] {
+            border-bottom: 3px solid var(--accent) !important;
+        }
+        div[role="radiogroup"] label[data-checked="true"] p,
+        div[role="radiogroup"] label[aria-checked="true"] p {
             color: #0F172A !important;
-        }}
+            font-weight: 800 !important;
+        }
         </style>
     """, unsafe_allow_html=True)
     
