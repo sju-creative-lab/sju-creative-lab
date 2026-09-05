@@ -1628,20 +1628,15 @@ def show_main_page():
             margin-bottom: 20px !important;
         }
 
-        /* 2. 동그라미(라디오 아이콘) 완벽 숨김 처리 */
-        /* 라디오 input을 감싸고 있는 div 전체를 숨겨서 동그라미 흔적을 100% 삭제 (:has 선택자 활용) */
-        div[data-testid="stRadio"] div[role="radiogroup"] label > div:has(input[type="radio"]) {
+        /* 2. 🔴 선생님께서 찾아주신 원형 아이콘 클래스 직접 타격하여 삭제 🔴 */
+        div[data-testid="stRadio"] .st-emotion-cache-he5m1v,
+        div[data-testid="stRadio"] .eqiohyi4,
+        div[data-testid="stRadio"] .eqiohyi5,
+        div[data-testid="stRadio"] div[data-baseweb="radio"] > div:first-child {
             display: none !important;
             width: 0 !important;
-            margin: 0 !important;
-        }
-        
-        /* 만약을 대비해 형제 요소 방식과 input 자체도 중복 숨김 */
-        div[data-testid="stRadio"] div[role="radiogroup"] label input[type="radio"] + div {
-            display: none !important;
-        }
-        div[data-testid="stRadio"] div[role="radiogroup"] label input[type="radio"] {
-            display: none !important;
+            height: 0 !important;
+            opacity: 0 !important;
         }
 
         /* 3. 각 메뉴(라벨) 패딩 및 배경 초기화 */
@@ -1654,7 +1649,7 @@ def show_main_page():
             box-shadow: none !important;
         }
 
-        /* 4. 메뉴 텍스트 기본 스타일 (투명 밑줄로 공간 미리 확보) */
+        /* 4. 메뉴 텍스트 기본 스타일 (회색, 투명 밑줄로 공간 확보) */
         div[data-testid="stRadio"] > div[role="radiogroup"] label p {
             font-size: 17px !important;
             font-weight: 500 !important;
@@ -1668,13 +1663,13 @@ def show_main_page():
         /* 5. 선택된 메뉴 텍스트 및 하단 밑줄 강조 (파란색) */
         div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"] p,
         div[data-testid="stRadio"] > div[role="radiogroup"] label[aria-checked="true"] p,
-        div[data-testid="stRadio"] > div[role="radiogroup"] label:has(input[type="radio"]:checked) p {
+        div[data-testid="stRadio"] > div[role="radiogroup"] label:has(input:checked) p {
             color: #0052FF !important;
             font-weight: 800 !important;
             border-bottom: 3px solid #0052FF !important;
         }
-        
-        /* 6. 호버 효과 */
+
+        /* 6. 마우스 호버 시 글씨 색상 진하게 */
         div[data-testid="stRadio"] > div[role="radiogroup"] label:hover p {
             color: #0F172A !important;
         }
@@ -1864,7 +1859,7 @@ def show_main_page():
             if repo_data_all:
                 st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
             else:
-                st.info("아직 공유된 산출물이 난습니다. 위의 업로드 영역에서 첫 산출물을 공유해 보세요.")
+                st.info("아직 공유된 산출물이 없습니다. 위의 업로드 영역에서 첫 산출물을 공유해 보세요.")
         else:
             for item in filtered_repo:
                 with st.container(border=True):
