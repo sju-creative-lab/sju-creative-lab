@@ -505,25 +505,16 @@ if 'show_signup_confirm' not in st.session_state:
 
 
 def get_display_name(user_id):
-    # 1. 숫자형 ID에 '.0'이 붙어오는 현상을 방지하기 위해 텍스트로 변환 후 꼬리 자르기
-    clean_id = str(user_id).strip()
-    if clean_id.endswith(".0"):
-        clean_id = clean_id[:-2]
-        
-    # 2. 정제된 아이디(clean_id)로 DB 정보 조회
     users_db = st.session_state['app_data'].get('users_db', {})
-    uinfo = users_db.get(clean_id, {})
-    
+    uinfo = users_db.get(user_id, {})
     dept = (uinfo.get('dept') or '').strip()
     manager = (uinfo.get('manager') or '').strip()
-    
-    # 3. 담당자명 -> 부서명 -> 아이디 순서로 출력
     if manager:
         return manager
     elif dept:
         return dept
     else:
-        return clean_id
+        return user_id
 
 
 def get_user_dept(user_id):
