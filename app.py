@@ -1112,6 +1112,8 @@ else:
 # 3-2. 파일 미리보기 모달 팝업 (코드 & HTML)
 # ==========================================
 def _render_preview_body(filename, file_url, legacy_data):
+    import re # 구글 드라이브 경고창 우회를 위한 정규표현식 모듈
+    
     file_ext = filename.split('.')[-1].lower() if filename else ''
     content = None
     
@@ -1121,28 +1123,40 @@ def _render_preview_body(filename, file_url, legacy_data):
     elif file_url and str(file_url).startswith("http"):
         with st.spinner("구글 드라이브에서 파일을 실시간으로 불러오는 중입니다..."):
             try:
-                # 세션을 열어서 요청
                 session = requests.Session()
-                r = session.get(file_url, stream=True)
+                r = session.get(file_url)
                 
-                # 구글 드라이브 '바이러스 검사 경고(Virus scan warning)' 페이지인지 확인
-                if "Virus scan warning" in r.text:
-                    # 기본 우회 승인 토큰 (py 파일 등 작은 실행 파일용)
-                    token = "t" 
+                # 구글 드라이브 '바이러스 검사 경고(실행 파일)' 페이지에 가로막혔는지 확인
+                if "Virus scan warning" in r.text or 'id="download-form"' in r.text:
+                    # 경고 페이지 내부에 숨겨진 '그래도 다운로드' 폼(Form)에서 필수 인증 토큰 추출
+                    action_match = re.search(r'id="download-form"\s+action="([^"]+)"', r.text)
+                    id_match = re.search(r'name="id"\s+value="([^"]+)"', r.text)
+                    confirm_match = re.search(r'name="confirm"\s+value="([^"]+)"', r.text)
+                    uuid_match = re.search(r'name="uuid"\s+value="([^"]+)"', r.text)
                     
-                    # 대용량 파일일 경우 쿠키에서 고유 승인 토큰 추출
-                    for key, value in r.cookies.items():
-                        if key.startswith('download_warning'):
-                            token = value
-                            break
+                    if action_match and id_match and confirm_match:
+                        download_url = action_match.group(1)
+                        if not download_url.startswith("http"):
+                            download_url = "https://drive.google.com" + download_url
                             
-                    # 승인 토큰을 주소에 붙여서 실제 원본 파일 데이터 재요청
-                    r = session.get(file_url + f"&confirm={token}", stream=True)
+                        params = {
+                            "id": id_match.group(1),
+                            "export": "download",
+                            "confirm": confirm_match.group(1)
+                        }
+                        if uuid_match:
+                            params["uuid"] = uuid_match.group(1)
+                            
+                        # 추출한 고유 토큰(uuid, confirm)을 제출하여 원본 파이썬 코드 강제 요청
+                        r = session.get(download_url, params=params, cookies=r.cookies)
+                    else:
+                        # 정규식 추출 실패 시 기본 덧붙임 방식으로 우회 시도
+                        r = session.get(file_url + "&confirm=t", cookies=r.cookies)
 
                 if r.status_code == 200:
                     content = r.content
                 else:
-                    st.error("파일에 접근할 수 없습니다. 권한을 확인해 주세요.")
+                    st.error(f"파일에 접근할 수 없습니다. (상태 코드: {r.status_code})")
                     return
             except Exception as e:
                 st.error(f"통신 에러가 발생했습니다: {e}")
