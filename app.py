@@ -1800,7 +1800,7 @@ def show_main_page():
                                         st.rerun()
                         with m_col3:
                             with st.popover("산출물 삭제", use_container_width=True):
-                                st.markdown("⚠️ **정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
+                                st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
                                 if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
                                     st.session_state['app_data']['repository'] = [
                                         p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
