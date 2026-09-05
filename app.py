@@ -1633,13 +1633,30 @@ def show_main_page():
 
     is_admin = is_user_admin(current_user_id)
 
-    if is_admin:
-        tab1, tab2, tab3, tab4 = st.tabs(["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"])
-    else:
-        tab1, tab2 = st.tabs(["대시보드 현황", "실험실"])
+    menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
+    
+    st.markdown("""
+        <style>
+        /* 라디오 그룹 하단에 구분선을 넣어 탭 메뉴처럼 디자인 */
+        div[role="radiogroup"] {
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 5px;
+            margin-bottom: 20px;
+        }
+        div[role="radiogroup"] label {
+            margin-right: 15px;
+            cursor: pointer;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    if 'active_tab' not in st.session_state:
+        st.session_state['active_tab'] = "대시보드 현황"
+        
+    selected_tab = st.radio("메뉴 이동", menu_tabs, horizontal=True, label_visibility="collapsed", key="active_tab")
 
     # ---------------- 탭 1: 대시보드 현황 ----------------
-    with tab1:
+    if selected_tab == "대시보드 현황":
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"<div class='metric-card'><div class='label'>전체 프로젝트</div><div class='value'>{total_projects}</div><div class='sub'>공개(Public) 프로젝트 기준</div></div>", unsafe_allow_html=True)
@@ -1735,7 +1752,7 @@ def show_main_page():
             render_board_table(page_items, start_idx)
 
     # ---------------- 탭 2: 산출물 커뮤니티 및 저장소 ----------------
-    with tab2:
+    elif selected_tab == "실험실":
         st.markdown("### 실험실")
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
 
@@ -2001,170 +2018,168 @@ def show_main_page():
                     st.markdown("</div>", unsafe_allow_html=True)
 
     # ---------------- 탭 3: 계정 관리 및 부서 설정 (관리자 전용) ----------------
-    if is_admin:
-        with tab3:
-            st.markdown("### 시스템 계정 관리")
-            users_db = st.session_state['app_data']['users_db']
+    elif selected_tab == "계정 관리" and is_admin:
+        st.markdown("### 시스템 계정 관리")
+        users_db = st.session_state['app_data']['users_db']
 
-            users_rows = []
-            for uid, uinfo in users_db.items():
-                users_rows.append({
-                    "사용자 ID": uid,
-                    "부서명": uinfo.get("dept", ""),
-                    "담당자명": uinfo.get("manager", ""),
-                    "비밀번호": uinfo.get("password", ""),
-                    "권한": "관리자" if uinfo.get("role") == "admin" else "일반",
-                    "승인 여부": "승인됨" if uinfo.get("approved", True) else "대기중",
-                    "조사 제출": "완료" if uinfo.get("survey_completed", False) else "미제출"
-                })
-            users_df = pd.DataFrame(users_rows)
-            st.dataframe(users_df, use_container_width=True, hide_index=True)
+        users_rows = []
+        for uid, uinfo in users_db.items():
+            users_rows.append({
+                "사용자 ID": uid,
+                "부서명": uinfo.get("dept", ""),
+                "담당자명": uinfo.get("manager", ""),
+                "비밀번호": uinfo.get("password", ""),
+                "권한": "관리자" if uinfo.get("role") == "admin" else "일반",
+                "승인 여부": "승인됨" if uinfo.get("approved", True) else "대기중",
+                "조사 제출": "완료" if uinfo.get("survey_completed", False) else "미제출"
+            })
+        users_df = pd.DataFrame(users_rows)
+        st.dataframe(users_df, use_container_width=True, hide_index=True)
 
-            st.markdown("#### 회원가입 승인 대기 목록")
-            st.caption("현재는 회원가입 시 자동 승인되므로 이 목록은 비어있는 것이 정상입니다. 과거에 미승인 상태로 남아있던 계정이 있을 경우에만 표시됩니다.")
-            pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", True)]
-            if not pending_users:
-                st.info("승인 대기 중인 계정이 없습니다.")
-            else:
-                for uid in pending_users:
-                    uinfo = users_db[uid]
-                    with st.container(border=True):
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            st.markdown(f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')})")
-                        with c2:
-                            if st.button("승인", key=f"approve_{uid}", use_container_width=True):
-                                st.session_state['app_data']['users_db'][uid]["approved"] = True
+        st.markdown("#### 회원가입 승인 대기 목록")
+        st.caption("현재는 회원가입 시 자동 승인되므로 이 목록은 비어있는 것이 정상입니다. 과거에 미승인 상태로 남아있던 계정이 있을 경우에만 표시됩니다.")
+        pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", True)]
+        if not pending_users:
+            st.info("승인 대기 중인 계정이 없습니다.")
+        else:
+            for uid in pending_users:
+                uinfo = users_db[uid]
+                with st.container(border=True):
+                    c1, c2 = st.columns([3, 1])
+                    with c1:
+                        st.markdown(f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')})")
+                    with c2:
+                        if st.button("승인", key=f"approve_{uid}", use_container_width=True):
+                            st.session_state['app_data']['users_db'][uid]["approved"] = True
+                            save_data(st.session_state['app_data'])
+                            if st.session_state.get('last_save_status') != "fail":
+                                st.success(f"[{uid}] 계정이 승인되었습니다.")
+                                st.rerun()
+
+        st.markdown("---")
+        st.markdown("#### 관리자 권한 부여 / 해제")
+        st.caption("관리자 권한을 부여받은 계정은 모든 산출물을 수정·삭제하고, 다른 사용자를 삭제하며, 부서 목록을 관리할 수 있게 됩니다. 신중하게 부여해 주세요.")
+
+        non_root_users = [uid for uid in users_db.keys() if uid != 'admin']
+        if not non_root_users:
+            st.info("권한을 부여할 다른 계정이 없습니다.")
+        else:
+            for uid in non_root_users:
+                uinfo = users_db[uid]
+                current_role = uinfo.get("role", "user")
+                with st.container(border=True):
+                    rc1, rc2, rc3 = st.columns([3, 1.3, 1.3])
+                    with rc1:
+                        role_badge_class = "role-badge-admin" if current_role == "admin" else "role-badge-user"
+                        role_label = "관리자" if current_role == "admin" else "일반 사용자"
+                        st.markdown(
+                            f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')}) "
+                            f"<span class='{role_badge_class}'>{role_label}</span>",
+                            unsafe_allow_html=True
+                        )
+                    with rc2:
+                        if current_role != "admin":
+                            if st.button("관리자로 지정", key=f"grant_admin_{uid}", use_container_width=True):
+                                st.session_state['app_data']['users_db'][uid]["role"] = "admin"
                                 save_data(st.session_state['app_data'])
                                 if st.session_state.get('last_save_status') != "fail":
-                                    st.success(f"[{uid}] 계정이 승인되었습니다.")
+                                    st.success(f"[{uid}] 계정에 관리자 권한이 부여되었습니다.")
+                                    st.rerun()
+                    with rc3:
+                        if current_role == "admin":
+                            if st.button("권한 해제", key=f"revoke_admin_{uid}", use_container_width=True):
+                                st.session_state['app_data']['users_db'][uid]["role"] = "user"
+                                save_data(st.session_state['app_data'])
+                                if st.session_state.get('last_save_status') != "fail":
+                                    st.success(f"[{uid}] 계정의 관리자 권한이 해제되었습니다.")
                                     st.rerun()
 
-            st.markdown("---")
-            st.markdown("#### 관리자 권한 부여 / 해제")
-            st.caption("관리자 권한을 부여받은 계정은 모든 산출물을 수정·삭제하고, 다른 사용자를 삭제하며, 부서 목록을 관리할 수 있게 됩니다. 신중하게 부여해 주세요.")
+        st.markdown("---")
+        st.markdown("#### 사용자 계정 삭제")
+        target_user = st.selectbox("삭제할 사용자 선택", options=[u for u in users_db.keys() if u != 'admin'])
+        if st.button("선택 계정 삭제"):
+            if target_user in st.session_state['app_data']['users_db']:
+                del st.session_state['app_data']['users_db'][target_user]
+                if 'deleted_ids' not in st.session_state['app_data']:
+                    st.session_state['app_data']['deleted_ids'] = []
+                if target_user not in st.session_state['app_data']['deleted_ids']:
+                    st.session_state['app_data']['deleted_ids'].append(target_user)
+                save_data(st.session_state['app_data'])
+                if st.session_state.get('last_save_status') != "fail":
+                    st.success(f"사용자 [{target_user}] 계정이 삭제되었습니다.")
+                    st.rerun()
 
-            non_root_users = [uid for uid in users_db.keys() if uid != 'admin']
-            if not non_root_users:
-                st.info("권한을 부여할 다른 계정이 없습니다.")
-            else:
-                for uid in non_root_users:
-                    uinfo = users_db[uid]
-                    current_role = uinfo.get("role", "user")
-                    with st.container(border=True):
-                        rc1, rc2, rc3 = st.columns([3, 1.3, 1.3])
-                        with rc1:
-                            role_badge_class = "role-badge-admin" if current_role == "admin" else "role-badge-user"
-                            role_label = "관리자" if current_role == "admin" else "일반 사용자"
-                            st.markdown(
-                                f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')}) "
-                                f"<span class='{role_badge_class}'>{role_label}</span>",
-                                unsafe_allow_html=True
-                            )
-                        with rc2:
-                            if current_role != "admin":
-                                if st.button("관리자로 지정", key=f"grant_admin_{uid}", use_container_width=True):
-                                    st.session_state['app_data']['users_db'][uid]["role"] = "admin"
-                                    save_data(st.session_state['app_data'])
-                                    if st.session_state.get('last_save_status') != "fail":
-                                        st.success(f"[{uid}] 계정에 관리자 권한이 부여되었습니다.")
-                                        st.rerun()
-                        with rc3:
-                            if current_role == "admin":
-                                if st.button("권한 해제", key=f"revoke_admin_{uid}", use_container_width=True):
-                                    st.session_state['app_data']['users_db'][uid]["role"] = "user"
-                                    save_data(st.session_state['app_data'])
-                                    if st.session_state.get('last_save_status') != "fail":
-                                        st.success(f"[{uid}] 계정의 관리자 권한이 해제되었습니다.")
-                                        st.rerun()
+        st.markdown("---")
+        st.markdown("### 사이드바 [부서] 필터 항목 구성")
+        st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
+        current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
+        st.write("현재 등록된 부서 목록:", current_cats)
 
-            st.markdown("---")
-            st.markdown("#### 사용자 계정 삭제")
-            target_user = st.selectbox("삭제할 사용자 선택", options=[u for u in users_db.keys() if u != 'admin'])
-            if st.button("선택 계정 삭제"):
-                if target_user in st.session_state['app_data']['users_db']:
-                    del st.session_state['app_data']['users_db'][target_user]
-                    if 'deleted_ids' not in st.session_state['app_data']:
-                        st.session_state['app_data']['deleted_ids'] = []
-                    if target_user not in st.session_state['app_data']['deleted_ids']:
-                        st.session_state['app_data']['deleted_ids'].append(target_user)
-                    save_data(st.session_state['app_data'])
-                    if st.session_state.get('last_save_status') != "fail":
-                        st.success(f"사용자 [{target_user}] 계정이 삭제되었습니다.")
-                        st.rerun()
+        new_cat_input = st.text_input("추가할 새로운 부서명 입력", placeholder="예: 산학협력단")
+        if st.button("부서 추가"):
+            if new_cat_input and new_cat_input not in current_cats:
+                st.session_state['app_data']['categories'].append(new_cat_input)
+                save_data(st.session_state['app_data'])
+                if st.session_state.get('last_save_status') != "fail":
+                    st.success(f"부서 [{new_cat_input}]가 추가되었습니다.")
+                    st.rerun()
 
-            st.markdown("---")
-            st.markdown("### 사이드바 [부서] 필터 항목 구성")
-            st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
-            current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
-            st.write("현재 등록된 부서 목록:", current_cats)
+        rem_cat = st.selectbox("삭제할 부서 선택", options=[c for c in current_cats if c != '전체'])
+        if st.button("선택 부서 삭제"):
+            if rem_cat in st.session_state['app_data']['categories']:
+                st.session_state['app_data']['categories'].remove(rem_cat)
+                save_data(st.session_state['app_data'])
+                if st.session_state.get('last_save_status') != "fail":
+                    st.success(f"부서 [{rem_cat}]가 삭제되었습니다.")
+                    st.rerun()
 
-            new_cat_input = st.text_input("추가할 새로운 부서명 입력", placeholder="예: 산학협력단")
-            if st.button("부서 추가"):
-                if new_cat_input and new_cat_input not in current_cats:
-                    st.session_state['app_data']['categories'].append(new_cat_input)
-                    save_data(st.session_state['app_data'])
-                    if st.session_state.get('last_save_status') != "fail":
-                        st.success(f"부서 [{new_cat_input}]가 추가되었습니다.")
-                        st.rerun()
+        st.markdown("---")
+        st.markdown("### Google Sheets 연동 진단 로그")
+        st.caption(f"현재 db_mode: **{st.session_state.get('db_mode', '알 수 없음')}**")
+        debug_log = st.session_state.get('gsheets_debug_log', [])
+        if debug_log:
+            for level, line in debug_log:
+                if level == "error":
+                    st.error(line)
+                elif level == "warn":
+                    st.warning(line)
+                else:
+                    st.info(line)
+        else:
+            st.write("진단 로그가 없습니다.")
 
-            rem_cat = st.selectbox("삭제할 부서 선택", options=[c for c in current_cats if c != '전체'])
-            if st.button("선택 부서 삭제"):
-                if rem_cat in st.session_state['app_data']['categories']:
-                    st.session_state['app_data']['categories'].remove(rem_cat)
-                    save_data(st.session_state['app_data'])
-                    if st.session_state.get('last_save_status') != "fail":
-                        st.success(f"부서 [{rem_cat}]가 삭제되었습니다.")
-                        st.rerun()
-
-            st.markdown("---")
-            st.markdown("### Google Sheets 연동 진단 로그")
-            st.caption(f"현재 db_mode: **{st.session_state.get('db_mode', '알 수 없음')}**")
-            debug_log = st.session_state.get('gsheets_debug_log', [])
-            if debug_log:
-                for level, line in debug_log:
-                    if level == "error":
-                        st.error(line)
-                    elif level == "warn":
-                        st.warning(line)
-                    else:
-                        st.info(line)
-            else:
-                st.write("진단 로그가 없습니다.")
-
-            full_tbs = st.session_state.get('gsheets_full_traceback', [])
-            if full_tbs:
-                st.markdown("#### 전체 traceback (원인 정밀 확인용)")
-                for tag, tb in full_tbs:
-                    with st.expander(f"[{tag}] 전체 traceback 보기"):
-                        st.code(tb, language="text")
+        full_tbs = st.session_state.get('gsheets_full_traceback', [])
+        if full_tbs:
+            st.markdown("#### 전체 traceback (원인 정밀 확인용)")
+            for tag, tb in full_tbs:
+                with st.expander(f"[{tag}] 전체 traceback 보기"):
+                    st.code(tb, language="text")
 
     # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
-    if is_admin:
-        with tab4:
-            st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
-            st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
+    elif selected_tab == "현황 조사 제출 관리" and is_admin:
+        st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
+        st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
+        
+        survey_list = st.session_state['app_data'].get('survey', [])
+        
+        if not survey_list:
+            st.info("아직 제출된 현황조사 데이터가 없습니다.")
+        else:
+            survey_df = pd.DataFrame(survey_list)
             
-            survey_list = st.session_state['app_data'].get('survey', [])
+            st.markdown(f"**총 제출 건수:** {len(survey_df)}건")
             
-            if not survey_list:
-                st.info("아직 제출된 현황조사 데이터가 없습니다.")
-            else:
-                survey_df = pd.DataFrame(survey_list)
-                
-                st.markdown(f"**총 제출 건수:** {len(survey_df)}건")
-                
-                st.dataframe(survey_df, use_container_width=True, hide_index=True)
-                
-                csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
-                
-                st.download_button(
-                    label="CSV 파일 다운로드",
-                    data=csv_data,
-                    file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+            st.dataframe(survey_df, use_container_width=True, hide_index=True)
+            
+            csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
+            
+            st.download_button(
+                label="CSV 파일 다운로드",
+                data=csv_data,
+                file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
 
 
 # ==========================================
