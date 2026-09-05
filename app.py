@@ -1591,9 +1591,7 @@ def show_main_page():
             with st.form("upload_form", clear_on_submit=True):
                 proj_name = st.text_input("프로젝트 명", placeholder="예: 학사행정 챗봇 자동응답 시스템")
                 proj_desc = st.text_area("산출물 설명", placeholder="예: 학생 문의를 자동으로 분류하고 답변하는 AI 챗봇입니다.")
-                uploaded_file = st.file_uploader(
-                    "산출물 파일 첨부",
-                    type=['zip', 'pdf', 'py', 'csv', 'txt', 'xlsx', 'html']
+                uploaded_file = st.file_uploader("산출물 파일 첨부")
                 )
                 st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML 파일은 새 창에서 미리보기가 가능합니다.")
 
