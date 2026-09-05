@@ -609,7 +609,7 @@ def record_timeline_completion(item):
     if started is not None:
         duration_hours = round((completed - started).total_seconds() / 3600, 1)
 
-    st.session_state['app_data'].setdefault('timeline_log', []append({
+    st.session_state['app_data'].setdefault('timeline_log', []).append({
         "id": item['id'],
         "title": item['title'],
         "category": item.get('category', '일반'),
