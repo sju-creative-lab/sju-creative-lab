@@ -1625,60 +1625,89 @@ def show_main_page():
     is_admin = is_user_admin(current_user_id)
 
     menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
+    tab_count = len(menu_tabs)
     
-    st.markdown("""
+    st.markdown(f"""
         <style>
-        /* 1. 전체 라디오 그룹 배경 투명 및 간격 조정 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] {
-            background-color: transparent !important;
-            border: none !important;
+        /* 1. 라디오 버튼 컨테이너: 가로 정렬, 회색 알약 배경 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] {{
+            position: relative;
+            display: flex !important;
             flex-direction: row !important;
-            gap: 2rem !important;
-            padding: 0 !important;
-            margin-bottom: 20px !important;
-        }
+            background-color: #F1F5F9 !important; /* 옅은 회색 배경 */
+            border-radius: 12px !important;
+            padding: 4px !important;
+            margin-bottom: 25px !important;
+            gap: 0px !important;
+            border: 1px solid var(--border) !important;
+            z-index: 1;
+        }}
 
-        /* 2. 원형 라디오 버튼 완벽 제거 */
-        /* 선생님께서 찾아주신 클래스 직접 제어 */
-        div[data-testid="stRadio"] .st-emotion-cache-he5m1v,
-        div[data-testid="stRadio"] .eqiohyi4,
-        div[data-testid="stRadio"] .eqiohyi5 {
-            display: none !important;
-        }
+        /* 2. 슬라이딩되는 파란색 하이라이트 블록 */
+        div[data-testid="stRadio"] > div[role="radiogroup"]::before {{
+            content: "";
+            position: absolute;
+            top: 4px; bottom: 4px; left: 4px;
+            width: calc((100% - 8px) / {tab_count}); /* 탭 개수에 맞게 너비 계산 */
+            background-color: var(--accent); /* 파란색 하이라이트 */
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 82, 255, 0.3);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: -1; /* 글씨보다 뒤에 위치 */
+        }}
 
-        /* 3. 각 탭 텍스트 라벨 기본 스타일 (투명 배경) */
-        div[data-testid="stRadio"] label {
-            background-color: transparent !important;
-            border: none !important;
-            padding: 0 !important;
+        /* 위치 이동 애니메이션 로직 */
+        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(1) input:checked)::before {{ transform: translateX(0%); }}
+        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(2) input:checked)::before {{ transform: translateX(100%); }}
+        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(3) input:checked)::before {{ transform: translateX(200%); }}
+        div[data-testid="stRadio"] > div[role="radiogroup"]:has(label:nth-child(4) input:checked)::before {{ transform: translateX(300%); }}
+
+        /* 3. 각 탭 버튼의 영역 확장 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] > label {{
+            flex: 1 1 0% !important; /* 너비를 균등하게 분할 */
             margin: 0 !important;
+            padding: 10px 0px !important;
             cursor: pointer !important;
-            box-shadow: none !important;
-        }
+            background: transparent !important;
+            border: none !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            height: 100% !important;
+        }}
 
-        /* 4. 탭 텍스트 폰트 설정 */
-        div[data-testid="stRadio"] label p {
-            font-size: 16px !important;
-            font-weight: 500 !important;
-            color: var(--muted-foreground) !important;
+        /* 4. 🔴 선생님이 찾아주신 클래스를 활용하여 '동그라미 껍데기'를 핀포인트로 삭제 🔴 */
+        div[data-testid="stRadio"] label .st-emotion-cache-he5m1v,
+        div[data-testid="stRadio"] label .eqiohyi4,
+        div[data-testid="stRadio"] label .eqiohyi5 {{
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            opacity: 0 !important;
+            position: absolute !important;
+        }}
+
+        /* 5. 메뉴 텍스트 스타일 (기본) */
+        div[data-testid="stRadio"] > div[role="radiogroup"] > label p {{
             margin: 0 !important;
-            padding-bottom: 4px !important;
-            border-bottom: 3px solid transparent !important;
-            transition: all 0.2s ease !important;
-        }
+            font-size: 15px !important;
+            font-weight: 500 !important;
+            color: #64748B !important;
+            transition: color 0.3s ease !important;
+            text-align: center !important;
+            width: 100% !important;
+        }}
 
-        /* 5. 선택된 탭 텍스트 강조 (글씨 진하게 + 파란색 밑줄) */
-        div[data-testid="stRadio"] label[data-checked="true"] p,
-        div[data-testid="stRadio"] label[aria-checked="true"] p {
-            color: var(--accent) !important;
-            font-weight: 800 !important;
-            border-bottom: 3px solid var(--accent) !important;
-        }
-        
-        /* 6. 호버 효과 */
-        div[data-testid="stRadio"] label:hover p {
-            color: var(--foreground) !important;
-        }
+        /* 6. 선택된 탭 텍스트 스타일 (하얀색 글씨 + 진하게) */
+        div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) p {{
+            color: #FFFFFF !important;
+            font-weight: 700 !important;
+        }}
+
+        /* 7. 호버 효과 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover:not(:has(input:checked)) p {{
+            color: #0F172A !important;
+        }}
         </style>
     """, unsafe_allow_html=True)
     
@@ -1807,7 +1836,7 @@ def show_main_page():
                 proj_name = st.text_input("프로젝트 명", placeholder="예: 학사행정 챗봇 자동응답 시스템")
                 proj_desc = st.text_area("산출물 설명", placeholder="예: 학생 문의를 자동으로 분류하고 답변하는 AI 챗봇입니다.")
                 
-                # 변경점: 다중 파일 첨부 허용
+                # 다중 파일 첨부 허용
                 uploaded_files = st.file_uploader("산출물 파일 첨부 (여러 개 선택 가능)", accept_multiple_files=True)
                 st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML, 파이썬 파일 등은 새 창에서 미리보기가 가능합니다.")
 
@@ -1908,7 +1937,7 @@ def show_main_page():
                         
                     can_manage = (current_user_str == item_author_str or is_user_admin(st.session_state.get('user_id')))
 
-                    # 변경점: 다중 파일 목록 UI 출력 
+                    # 다중 파일 목록 UI 출력 
                     with action_col:
                         existing_files = item.get("files", [])
                         if item.get("filename") and not existing_files:
@@ -1969,7 +1998,7 @@ def show_main_page():
                                 st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
                                 if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
                                     
-                                    # 변경점: 프로젝트 완전 삭제 시 다중 파일 모두 구글 드라이브에서 삭제
+                                    # 프로젝트 완전 삭제 시 다중 파일 모두 구글 드라이브에서 삭제
                                     files_to_delete = item.get("files", [])
                                     if not files_to_delete and item.get("file_url"):
                                         files_to_delete = [{"file_url": item["file_url"]}]
@@ -1986,7 +2015,7 @@ def show_main_page():
                                         st.success("삭제되었습니다.")
                                         st.rerun()
 
-                    # 변경점: 내용 수정 시 기존 첨부파일 삭제 및 새로운 다중 파일 추가 기능 구현
+                    # 내용 수정 시 기존 첨부파일 삭제 및 새로운 다중 파일 추가 기능 구현
                     if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
                         with st.form(f"edit_form_{item['id']}"):
                             edit_title = st.text_input("프로젝트 명 수정", value=item['title'])
@@ -2001,7 +2030,7 @@ def show_main_page():
                             if existing_files_for_edit:
                                 st.caption("아래 목록에서 체크한 파일은 저장 시 **삭제**됩니다.")
                                 for i, f_info in enumerate(existing_files_for_edit):
-                                    del_flags.append(st.checkbox(f"삭제: {f_info.get('filename')}", key=f"del_{item['id']}_{i}"))
+                                    del_flags.append(st.checkbox(f"[삭제] {f_info.get('filename')}", key=f"del_{item['id']}_{i}"))
                             else:
                                 st.caption("기존 첨부파일이 없습니다.")
                             
