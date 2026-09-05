@@ -489,7 +489,7 @@ def save_data(data):
             st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
             if core_save_failed:
                 st.session_state['last_save_status'] = "fail"
-                st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 정있습니다. 오류: {err_txt}")
+                st.error(f"저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 정있습니다. 오류: {err_txt}")
             else:
                 st.session_state['last_save_status'] = "success"
     else:
@@ -1108,7 +1108,7 @@ def _render_preview_body(filename, file_url, legacy_data):
     if legacy_data and len(legacy_data) > 0:
         content = legacy_data
     elif file_url and str(file_url).startswith("http"):
-        with st.spinner("구글 드라이브에서 파일을 실시간으로 불러오는 중입니다..."):
+        with st.spinner("서버에서 파일을 실시간으로 불러오는 중입니다..."):
             try:
                 session = requests.Session()
                 r = session.get(file_url)
@@ -1166,11 +1166,11 @@ def _render_preview_body(filename, file_url, legacy_data):
             st.error("텍스트로 변환할 수 없는 파일 형식이거나 인코딩 오류입니다.")
 
 if hasattr(st, "dialog"):
-    @st.dialog("👀 산출물 미리보기", width="large")
+    @st.dialog("산출물 미리보기", width="large")
     def show_preview_modal(filename, file_url, legacy_data):
         _render_preview_body(filename, file_url, legacy_data)
 elif hasattr(st, "experimental_dialog"):
-    @st.experimental_dialog("👀 산출물 미리보기", width="large")
+    @st.experimental_dialog("산출물 미리보기", width="large")
     def show_preview_modal(filename, file_url, legacy_data):
         _render_preview_body(filename, file_url, legacy_data)
 else:
@@ -1835,7 +1835,7 @@ def show_main_page():
                                     st.balloons()
                                     st.rerun()
                             except Exception as e:
-                                st.error(f"구글 드라이브 업로드 중 오류가 발생했습니다: {e}")
+                                st.error(f"서버에 업로드 중 오류가 발생했습니다: {e}")
                     else:
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
 
@@ -1901,9 +1901,9 @@ def show_main_page():
                         
                         file_url = item.get('file_url')
                         if isinstance(file_url, str) and file_url.startswith("http"):
-                            st.link_button("📥 파일 다운로드", url=file_url, use_container_width=True)
+                            st.link_button("파일 다운로드", url=file_url, use_container_width=True)
                         elif item.get('file_data') and len(item['file_data']) > 0:
-                            st.download_button(label="📥 파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
                         else:
                             st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
 
@@ -2132,7 +2132,7 @@ def show_main_page():
 
         st.markdown("---")
         st.markdown("### 사이드바 [부서] 필터 항목 구성")
-        st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
+        st.caption("회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
         current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
         st.write("현재 등록된 부서 목록:", current_cats)
 
