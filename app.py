@@ -272,7 +272,6 @@ def load_data():
 
                         final_repo = []
                         for s_item in sheet_repo:
-                            # 1. 시트에서 불러온 프로젝트 ID의 '.0' 꼬리 제거
                             s_id_str = str(s_item['id']).strip()
                             if s_id_str.endswith(".0"):
                                 s_id_str = s_id_str[:-2]
@@ -296,7 +295,6 @@ def load_data():
                             if pd.isna(s_item.get('completed_at')) or str(s_item.get('completed_at')) in ('', 'None', 'nan'):
                                 s_item['completed_at'] = None
 
-                            # 2. 로컬 데이터의 ID도 '.0' 꼬리를 제거한 후 비교 매칭
                             def clean_loc_id(loc_id):
                                 lid = str(loc_id).strip()
                                 return lid[:-2] if lid.endswith(".0") else lid
@@ -1620,52 +1618,54 @@ def show_main_page():
     
     st.markdown("""
         <style>
-        /* 깔끔하고 투명한 텍스트 탭 스타일 (구식 동그라미 완벽 제거) */
-        div[role="radiogroup"] {
-            display: flex;
-            flex-direction: row;
-            gap: 2rem;
+        /* 1. 라디오 그룹 컨테이너 (배경 투명, 가로 정렬, 간격 조정) */
+        div[data-testid="stRadio"] > div[role="radiogroup"] {
             background-color: transparent !important;
             border: none !important;
-            margin-bottom: 2rem;
-            padding: 0;
+            flex-direction: row !important;
+            gap: 2rem !important;
+            padding: 0 !important;
+            margin-bottom: 20px !important;
         }
-        div[role="radiogroup"] label {
-            margin: 0 !important;
-            padding: 0.5rem 0.2rem !important;
-            cursor: pointer;
-            background: transparent !important;
-            border: none !important;
-            border-bottom: 3px solid transparent !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-        }
-        div[role="radiogroup"] label:hover {
-            background: transparent !important;
-        }
-        
-        /* 라디오 동그라미 완벽 제거 */
-        div[role="radiogroup"] label > div:first-child {
+
+        /* 2. 동그라미(라디오 아이콘) 완벽 숨김 처리 */
+        /* stMarkdownContainer가 아닌 모든 형제 요소를 숨김으로써 버전 호환성 100% 확보 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label > *:not([data-testid="stMarkdownContainer"]) {
             display: none !important;
         }
-        
-        /* 텍스트 스타일 */
-        div[role="radiogroup"] label p {
+
+        /* 3. 각 탭 텍스트 라벨 기본 스타일 (투명 배경) */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label {
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+        }
+
+        /* 4. 탭 텍스트 폰트 설정 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label p {
             font-size: 16px !important;
             font-weight: 500 !important;
-            color: #64748B !important;
-            margin: 0;
+            color: var(--muted-foreground) !important;
+            margin: 0 !important;
+            padding-bottom: 4px !important;
+            border-bottom: 3px solid transparent !important;
+            transition: all 0.2s ease !important;
         }
-        
-        /* 선택된 상태 - 파란색 굵은 밑줄 및 텍스트 색상 강조 */
-        div[role="radiogroup"] label[data-checked="true"],
-        div[role="radiogroup"] label[aria-checked="true"] {
+
+        /* 5. 선택된 탭 텍스트 강조 (글씨 진하게 + 파란색 밑줄) */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"] p,
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[aria-checked="true"] p {
+            color: var(--accent) !important;
+            font-weight: 800 !important;
             border-bottom: 3px solid var(--accent) !important;
         }
-        div[role="radiogroup"] label[data-checked="true"] p,
-        div[role="radiogroup"] label[aria-checked="true"] p {
-            color: #0F172A !important;
-            font-weight: 800 !important;
+        
+        /* 6. 호버 효과 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label:hover p {
+            color: var(--foreground) !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -1806,7 +1806,6 @@ def show_main_page():
                             ensure_category_exists(auto_dept)
                             
                             try:
-                                # 구글 드라이브로 업로드하고 다이렉트 링크 발급받기
                                 direct_download_url = upload_to_gdrive_and_get_link(uploaded_file)
                                 
                                 new_item = {
@@ -1817,7 +1816,7 @@ def show_main_page():
                                     "author": st.session_state.get('user_id', '익명'),
                                     "date": now_kst().strftime("%Y-%m-%d %H:%M"),
                                     "filename": uploaded_file.name,
-                                    "file_url": direct_download_url, # 다운로드 링크를 저장할 키 추가
+                                    "file_url": direct_download_url,
                                     "feedbacks": [],
                                     "issues": [],
                                     "completed_at": None
@@ -1881,7 +1880,6 @@ def show_main_page():
                         """, unsafe_allow_html=True)
                         st.markdown(f"<p class='repo-desc'>{item['desc']}</p>", unsafe_allow_html=True)
 
-                    # 권한 체크 시 아이디의 '.0' 꼬리를 제거하여 정확하게 본인인지 비교
                     current_user_str = str(st.session_state.get('user_id', '')).strip()
                     if current_user_str.endswith(".0"): 
                         current_user_str = current_user_str[:-2]
@@ -1895,7 +1893,6 @@ def show_main_page():
                     with action_col:
                         file_ext = item.get('filename', '').split('.')[-1].lower() if item.get('filename') else ''
                         
-                        # [다운로드 버튼 영역]
                         file_url = item.get('file_url')
                         if isinstance(file_url, str) and file_url.startswith("http"):
                             st.link_button("📥 파일 다운로드", url=file_url, use_container_width=True)
@@ -1904,7 +1901,6 @@ def show_main_page():
                         else:
                             st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
 
-                        # [추가된 모달 미리보기 버튼 영역]
                         preview_supported = file_ext in ['html', 'htm', 'py', 'txt', 'csv', 'json', 'js', 'css', 'md']
                         has_file = (isinstance(file_url, str) and file_url.startswith("http")) or (item.get('file_data') and len(item['file_data']) > 0)
                         
@@ -1940,7 +1936,6 @@ def show_main_page():
                                 st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
                                 if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
                                     
-                                    # [추가된 부분] 구글 드라이브에서 실제 파일 휴지통으로 이동
                                     if item.get('file_url'):
                                         delete_from_gdrive(item['file_url'])
                                         
