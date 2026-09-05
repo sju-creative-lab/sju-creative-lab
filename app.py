@@ -1118,10 +1118,27 @@ def _render_preview_body(filename, file_url, legacy_data):
     # 1. 파일 데이터 가져오기 (로컬 캐시 우선, 없으면 드라이브에서 실시간 다운로드)
     if legacy_data and len(legacy_data) > 0:
         content = legacy_data
-    elif file_url and str(file_url).startswith("http"):
+elif file_url and str(file_url).startswith("http"):
         with st.spinner("구글 드라이브에서 파일을 실시간으로 불러오는 중입니다..."):
             try:
-                r = requests.get(file_url)
+                # 세션을 열어서 요청
+                session = requests.Session()
+                r = session.get(file_url, stream=True)
+                
+                # 구글 드라이브 '바이러스 검사 경고(Virus scan warning)' 페이지인지 확인
+                if "Virus scan warning" in r.text:
+                    # 기본 우회 승인 토큰 (py 파일 등 작은 실행 파일용)
+                    token = "t" 
+                    
+                    # 대용량 파일일 경우 쿠키에서 고유 승인 토큰 추출
+                    for key, value in r.cookies.items():
+                        if key.startswith('download_warning'):
+                            token = value
+                            break
+                            
+                    # 승인 토큰을 주소에 붙여서 실제 원본 파일 데이터 재요청
+                    r = session.get(file_url + f"&confirm={token}", stream=True)
+
                 if r.status_code == 200:
                     content = r.content
                 else:
