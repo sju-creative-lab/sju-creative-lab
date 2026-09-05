@@ -1737,8 +1737,16 @@ def show_main_page():
                         """, unsafe_allow_html=True)
                         st.markdown(f"<p class='repo-desc'>{item['desc']}</p>", unsafe_allow_html=True)
 
-                    current_user = st.session_state.get('user_id')
-                    can_manage = (current_user == item['author'] or is_user_admin(current_user))
+                    # 권한 체크 시 아이디의 '.0' 꼬리를 제거하여 정확하게 본인인지 비교
+                    current_user_str = str(st.session_state.get('user_id', '')).strip()
+                    if current_user_str.endswith(".0"): 
+                        current_user_str = current_user_str[:-2]
+                        
+                    item_author_str = str(item.get('author', '')).strip()
+                    if item_author_str.endswith(".0"): 
+                        item_author_str = item_author_str[:-2]
+                        
+                    can_manage = (current_user_str == item_author_str or is_user_admin(st.session_state.get('user_id')))
 
                     with action_col:
                         file_ext = item.get('filename', '').split('.')[-1].lower() if item.get('filename') else ''
