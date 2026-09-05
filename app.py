@@ -59,37 +59,38 @@ def safe_show_logo(width=None, use_container_width=False):
         )
 
 
+import requests
+import base64
+
 # ------------------------------------------
-# 구글 드라이브 다이렉트 업로드 함수
+# 구글 드라이브 우회 업로드 함수 (GAS 연동)
 # ------------------------------------------
 def upload_to_gdrive_and_get_link(uploaded_file):
-    # 중요: '내 드라이브'가 아닌 '공유 드라이브'에 새로 만든 폴더의 ID로 교체해 주세요!
-    FOLDER_ID = "1e0jltGuIgghH6DSfi3T1O14mbLfPVyYB" 
+    # 중요: 방금 전 복사한 '웹 앱 URL'을 아래 따옴표 안에 붙여넣으세요!
+    GAS_URL = "https://script.google.com/macros/s/AKfycbzhUPJU9D3A6FH9r5RPOlydHp4PjRqSw8sWfD-PZYMUfFqUewFLFdboW0JnPiOU6bA2UQ/exec"
     
-    # 구글 시트 연동에 사용한 st.secrets 정보를 그대로 재활용하여 Drive API 인증
-    creds_info = st.secrets["connections"]["gsheets"]
-    credentials = service_account.Credentials.from_service_account_info(
-        creds_info, scopes=['https://www.googleapis.com/auth/drive']
-    )
-    service = build('drive', 'v3', credentials=credentials)
+    # 파일을 Base64로 인코딩하여 전송할 준비
+    file_bytes = uploaded_file.getvalue()
+    file_b64 = base64.b64encode(file_bytes).decode('utf-8')
     
-    # 파일 메타데이터 및 스트림 설정
-    file_metadata = {'name': uploaded_file.name, 'parents': [FOLDER_ID]}
-    media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getvalue()), mimetype=uploaded_file.type, resumable=True)
+    payload = {
+        "secret_key": "sju_secret_2026",  # GAS 코드와 일치하는 보안 키
+        "file_name": uploaded_file.name,
+        "mime_type": uploaded_file.type if uploaded_file.type else "application/octet-stream",
+        "file_b64": file_b64
+    }
     
-    # 구글 드라이브로 파일 업로드 실행
-    file = service.files().create(
-        body=file_metadata, 
-        media_body=media, 
-        fields='id',
-        supportsAllDrives=True  # <--- 핵심 해결 코드: 공유 드라이브 업로드 허용 파라미터 추가
-    ).execute()
+    # GAS 웹 앱으로 POST 요청 전송
+    response = requests.post(GAS_URL, json=payload)
     
-    file_id = file.get('id')
-    
-    # 드라이브 미리보기 창을 우회하여 즉시 다운로드되는 다이렉트 URL 생성
-    direct_link = f"https://drive.google.com/uc?export=download&id={file_id}"
-    return direct_link
+    if response.status_code == 200:
+        result = response.json()
+        if result.get("success"):
+            return result.get("file_url")
+        else:
+            raise Exception(f"업로드 에러: {result.get('error')}")
+    else:
+        raise Exception("서버 통신 실패 (URL을 확인해주세요)")
 
 
 # ==========================================
