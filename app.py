@@ -59,11 +59,12 @@ def safe_show_logo(width=None, use_container_width=False):
         )
 
 
-# ==========================================
+# ------------------------------------------
 # 구글 드라이브 다이렉트 업로드 함수
-# ==========================================
+# ------------------------------------------
 def upload_to_gdrive_and_get_link(uploaded_file):
-    FOLDER_ID = "10wjA3MKhBcZtlalkL_HHx9sUwPZo9kmp" 
+    # 중요: '내 드라이브'가 아닌 '공유 드라이브'에 새로 만든 폴더의 ID로 교체해 주세요!
+    FOLDER_ID = "1e0jltGuIgghH6DSfi3T1O14mbLfPVyYB" 
     
     # 구글 시트 연동에 사용한 st.secrets 정보를 그대로 재활용하여 Drive API 인증
     creds_info = st.secrets["connections"]["gsheets"]
@@ -77,7 +78,13 @@ def upload_to_gdrive_and_get_link(uploaded_file):
     media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getvalue()), mimetype=uploaded_file.type, resumable=True)
     
     # 구글 드라이브로 파일 업로드 실행
-    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    file = service.files().create(
+        body=file_metadata, 
+        media_body=media, 
+        fields='id',
+        supportsAllDrives=True  # <--- 핵심 해결 코드: 공유 드라이브 업로드 허용 파라미터 추가
+    ).execute()
+    
     file_id = file.get('id')
     
     # 드라이브 미리보기 창을 우회하여 즉시 다운로드되는 다이렉트 URL 생성
