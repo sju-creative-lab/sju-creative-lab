@@ -1634,71 +1634,105 @@ def show_main_page():
     is_admin = is_user_admin(current_user_id)
 
     menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
+    tab_count = len(menu_tabs)
+    tab_width = 100 / tab_count
     
-    st.markdown("""
+    st.markdown(f"""
         <style>
-        /* 트렌디한 Segmented Control (토스/iOS 스타일) 탭 UI 적용 */
-        div[role="radiogroup"] {
+        /* 네비게이션 메뉴 컨테이너 고립화 */
+        .nav-menu-container div[role="radiogroup"] {{
+            position: relative;
             display: inline-flex;
             flex-direction: row;
-            background-color: var(--muted);
-            padding: 6px;
-            border-radius: 16px;
-            gap: 4px;
+            background-color: #F8FAFC; /* 아주 밝은 회색 껍데기 배경 */
+            border-radius: 12px;
+            padding: 0;
             margin-bottom: 25px;
-        }
-        div[role="radiogroup"] > div {
-            gap: 0px !important;
-        }
-        div[role="radiogroup"] label {
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.04); /* 안쪽 그림자로 음각 느낌 */
+            overflow: hidden;
+            z-index: 1;
+            width: 100%; /* 부모 컨테이너 꽉 채우기 */
+            border: 1px solid var(--border);
+        }}
+
+        /* 슬라이딩되는 파란색 배경 (Magic Line/Background) */
+        .nav-menu-container div[role="radiogroup"]::before {{
+            content: "";
+            position: absolute;
+            top: 0; bottom: 0; left: 0;
+            width: {tab_width}%;
+            background-color: var(--accent); /* 파란색 하이라이트 */
+            border-radius: 10px;
+            transition: transform 0.35s cubic-bezier(0.4, 0.0, 0.2, 1);
+            z-index: -1; /* 텍스트 뒤로 배치 */
+            box-shadow: 0 4px 6px rgba(0,82,255,0.2);
+        }}
+
+        /* 탭 선택 상태에 따른 배경 이동 애니메이션 */
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(1)[data-checked="true"])::before,
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(1)[aria-checked="true"])::before {{
+            transform: translateX(0%);
+        }}
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(2)[data-checked="true"])::before,
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(2)[aria-checked="true"])::before {{
+            transform: translateX(100%);
+        }}
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(3)[data-checked="true"])::before,
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(3)[aria-checked="true"])::before {{
+            transform: translateX(200%);
+        }}
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(4)[data-checked="true"])::before,
+        .nav-menu-container div[role="radiogroup"]:has(label:nth-child(4)[aria-checked="true"])::before {{
+            transform: translateX(300%);
+        }}
+
+        /* 라디오 버튼 껍데기(라벨) 영역 */
+        .nav-menu-container div[role="radiogroup"] label {{
             margin: 0 !important;
-            padding: 10px 24px !important;
+            padding: 14px 0px !important;
             cursor: pointer;
-            border-radius: 12px !important;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
             border: none !important;
-            background: transparent;
+            background: transparent !important;
+            flex: 1; /* 균등한 너비 */
+            text-align: center;
             display: flex;
             align-items: center;
             justify-content: center;
-        }
-        div[role="radiogroup"] label:hover {
-            background-color: rgba(255, 255, 255, 0.4);
-        }
-        /* 선택된 탭 스타일 (흰색 배경 + 그림자) */
-        div[role="radiogroup"] label[data-checked="true"],
-        div[role="radiogroup"] label[aria-checked="true"] {
-            background-color: #FFFFFF !important;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
-        }
-        /* 기본 라디오(동그라미) 강제 숨기기 (버전 호환성 강화) */
-        div[role="radiogroup"] label div[data-baseweb="radio"],
-        div[role="radiogroup"] label > div:first-child:not([data-testid="stMarkdownContainer"]) {
+        }}
+
+        /* 동그란 기본 라디오 버튼 UI 완벽 숨김 */
+        .nav-menu-container div[role="radiogroup"] label div[data-baseweb="radio"],
+        .nav-menu-container div[role="radiogroup"] label > div:first-child:not([data-testid="stMarkdownContainer"]) {{
             display: none !important;
             width: 0 !important;
             height: 0 !important;
-        }
-        /* 텍스트 스타일 */
-        div[role="radiogroup"] label p {
+            opacity: 0 !important;
+        }}
+
+        /* 텍스트 기본 스타일 (선택 안 된 상태) */
+        .nav-menu-container div[role="radiogroup"] label p {{
             margin: 0 !important;
-            font-weight: 500 !important;
+            font-weight: 600 !important;
             font-size: 15px !important;
             color: var(--muted-foreground) !important;
-            text-align: center;
-        }
-        /* 선택된 탭 텍스트 스타일 */
-        div[role="radiogroup"] label[data-checked="true"] p,
-        div[role="radiogroup"] label[aria-checked="true"] p {
-            color: var(--accent) !important;
+            transition: color 0.3s ease !important;
+        }}
+
+        /* 텍스트 선택된 상태 (파란 배경 위이므로 하얀색 텍스트로 전환) */
+        .nav-menu-container div[role="radiogroup"] label[data-checked="true"] p,
+        .nav-menu-container div[role="radiogroup"] label[aria-checked="true"] p {{
+            color: #FFFFFF !important;
             font-weight: 700 !important;
-        }
+        }}
         </style>
     """, unsafe_allow_html=True)
     
     if 'active_tab' not in st.session_state:
         st.session_state['active_tab'] = "대시보드 현황"
         
+    st.markdown('<div class="nav-menu-container">', unsafe_allow_html=True)
     selected_tab = st.radio("메뉴 이동", menu_tabs, horizontal=True, label_visibility="collapsed", key="active_tab")
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ---------------- 탭 1: 대시보드 현황 ----------------
     if selected_tab == "대시보드 현황":
