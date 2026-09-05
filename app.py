@@ -1911,7 +1911,7 @@ def show_main_page():
                         has_file = (isinstance(file_url, str) and file_url.startswith("http")) or (item.get('file_data') and len(item['file_data']) > 0)
                         
                         if preview_supported and has_file:
-                            if st.button("👀 미리보기", key=f"preview_btn_{item['id']}", use_container_width=True):
+                            if st.button("미리보기", key=f"preview_btn_{item['id']}", use_container_width=True):
                                 show_preview_modal(item.get('filename', ''), file_url, item.get('file_data'))
 
                     if can_manage:
