@@ -1118,7 +1118,7 @@ def _render_preview_body(filename, file_url, legacy_data):
     # 1. 파일 데이터 가져오기 (로컬 캐시 우선, 없으면 드라이브에서 실시간 다운로드)
     if legacy_data and len(legacy_data) > 0:
         content = legacy_data
-elif file_url and str(file_url).startswith("http"):
+    elif file_url and str(file_url).startswith("http"):
         with st.spinner("구글 드라이브에서 파일을 실시간으로 불러오는 중입니다..."):
             try:
                 # 세션을 열어서 요청
@@ -1748,7 +1748,7 @@ def show_main_page():
 
                 if st.form_submit_button("실험실에 배포하기", use_container_width=True):
                     if proj_name and uploaded_file:
-                        with st.spinner("구글 드라이브 서버에 파일을 안전하게 업로드 중입니다... (용량에 따라 다소 시간이 소요될 수 있습니다)"):
+                        with st.spinner("서버에 파일을 안전하게 업로드 중입니다... (용량에 따라 다소 시간이 소요될 수 있습니다)"):
                             existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
                             new_id = max(existing_ids) + 1 if existing_ids else 1
                             auto_dept = get_user_dept(current_user_id)
