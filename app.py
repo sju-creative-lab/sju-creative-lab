@@ -1637,46 +1637,60 @@ def show_main_page():
     
     st.markdown("""
         <style>
-        /* 라디오 버튼을 완전한 탭(Tab) 메뉴 스타일로 변환 */
+        /* 트렌디한 Segmented Control (토스/iOS 스타일) 탭 UI 적용 */
         div[role="radiogroup"] {
+            display: inline-flex;
             flex-direction: row;
-            gap: 0px;
-            border-bottom: 2px solid var(--border);
-            padding-bottom: 0px;
+            background-color: var(--muted);
+            padding: 6px;
+            border-radius: 16px;
+            gap: 4px;
             margin-bottom: 25px;
         }
+        div[role="radiogroup"] > div {
+            gap: 0px !important;
+        }
         div[role="radiogroup"] label {
-            margin: 0;
-            padding: 12px 20px;
+            margin: 0 !important;
+            padding: 10px 24px !important;
             cursor: pointer;
-            border-radius: 8px 8px 0 0;
-            transition: all 0.2s;
-            position: relative;
-            bottom: -2px; /* 구분선에 걸치게 */
-            border-bottom: 2px solid transparent;
+            border-radius: 12px !important;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            border: none !important;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         div[role="radiogroup"] label:hover {
-            background-color: var(--muted);
+            background-color: rgba(255, 255, 255, 0.4);
         }
-        /* 기본 라디오(동그라미) 숨기기 */
-        div[role="radiogroup"] label > div:first-child {
+        /* 선택된 탭 스타일 (흰색 배경 + 그림자) */
+        div[role="radiogroup"] label[data-checked="true"],
+        div[role="radiogroup"] label[aria-checked="true"] {
+            background-color: #FFFFFF !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+        }
+        /* 기본 라디오(동그라미) 강제 숨기기 (버전 호환성 강화) */
+        div[role="radiogroup"] label div[data-baseweb="radio"],
+        div[role="radiogroup"] label > div:first-child:not([data-testid="stMarkdownContainer"]) {
             display: none !important;
+            width: 0 !important;
+            height: 0 !important;
         }
         /* 텍스트 스타일 */
         div[role="radiogroup"] label p {
-            margin: 0;
-            font-weight: 600;
-            font-size: 15px;
-            color: var(--muted-foreground);
+            margin: 0 !important;
+            font-weight: 500 !important;
+            font-size: 15px !important;
+            color: var(--muted-foreground) !important;
+            text-align: center;
         }
-        /* 선택된 탭 스타일 */
-        div[role="radiogroup"] label[data-checked="true"],
-        div[role="radiogroup"] label[aria-checked="true"] {
-            border-bottom: 2px solid var(--accent) !important;
-        }
+        /* 선택된 탭 텍스트 스타일 */
         div[role="radiogroup"] label[data-checked="true"] p,
         div[role="radiogroup"] label[aria-checked="true"] p {
             color: var(--accent) !important;
+            font-weight: 700 !important;
         }
         </style>
     """, unsafe_allow_html=True)
