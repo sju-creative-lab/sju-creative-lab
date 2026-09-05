@@ -1637,15 +1637,46 @@ def show_main_page():
     
     st.markdown("""
         <style>
-        /* 라디오 그룹 하단에 구분선을 넣어 탭 메뉴처럼 디자인 */
+        /* 라디오 버튼을 완전한 탭(Tab) 메뉴 스타일로 변환 */
         div[role="radiogroup"] {
+            flex-direction: row;
+            gap: 0px;
             border-bottom: 2px solid var(--border);
-            padding-bottom: 5px;
-            margin-bottom: 20px;
+            padding-bottom: 0px;
+            margin-bottom: 25px;
         }
         div[role="radiogroup"] label {
-            margin-right: 15px;
+            margin: 0;
+            padding: 12px 20px;
             cursor: pointer;
+            border-radius: 8px 8px 0 0;
+            transition: all 0.2s;
+            position: relative;
+            bottom: -2px; /* 구분선에 걸치게 */
+            border-bottom: 2px solid transparent;
+        }
+        div[role="radiogroup"] label:hover {
+            background-color: var(--muted);
+        }
+        /* 기본 라디오(동그라미) 숨기기 */
+        div[role="radiogroup"] label > div:first-child {
+            display: none !important;
+        }
+        /* 텍스트 스타일 */
+        div[role="radiogroup"] label p {
+            margin: 0;
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--muted-foreground);
+        }
+        /* 선택된 탭 스타일 */
+        div[role="radiogroup"] label[data-checked="true"],
+        div[role="radiogroup"] label[aria-checked="true"] {
+            border-bottom: 2px solid var(--accent) !important;
+        }
+        div[role="radiogroup"] label[data-checked="true"] p,
+        div[role="radiogroup"] label[aria-checked="true"] p {
+            color: var(--accent) !important;
         }
         </style>
     """, unsafe_allow_html=True)
