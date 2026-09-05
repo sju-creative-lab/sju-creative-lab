@@ -12,6 +12,12 @@ import math
 import time
 import streamlit.components.v1 as components
 
+# 구글 드라이브 연동용 라이브러리 추가
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+import io
+
 # ==========================================
 # 0. 공통 설정
 # ==========================================
@@ -51,6 +57,32 @@ def safe_show_logo(width=None, use_container_width=False):
             f"</div>",
             unsafe_allow_html=True
         )
+
+
+# ==========================================
+# 구글 드라이브 다이렉트 업로드 함수
+# ==========================================
+def upload_to_gdrive_and_get_link(uploaded_file):
+    FOLDER_ID = "10wjA3MKhBcZtlalkL_HHx9sUwPZo9kmp" 
+    
+    # 구글 시트 연동에 사용한 st.secrets 정보를 그대로 재활용하여 Drive API 인증
+    creds_info = st.secrets["connections"]["gsheets"]
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_info, scopes=['https://www.googleapis.com/auth/drive']
+    )
+    service = build('drive', 'v3', credentials=credentials)
+    
+    # 파일 메타데이터 및 스트림 설정
+    file_metadata = {'name': uploaded_file.name, 'parents': [FOLDER_ID]}
+    media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getvalue()), mimetype=uploaded_file.type, resumable=True)
+    
+    # 구글 드라이브로 파일 업로드 실행
+    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    file_id = file.get('id')
+    
+    # 드라이브 미리보기 창을 우회하여 즉시 다운로드되는 다이렉트 URL 생성
+    direct_link = f"https://drive.google.com/uc?export=download&id={file_id}"
+    return direct_link
 
 
 # ==========================================
@@ -218,7 +250,11 @@ def load_data():
 
                         final_repo = []
                         for s_item in sheet_repo:
-                            s_id_str = str(s_item['id'])
+                            # 1. 시트에서 불러온 프로젝트 ID의 '.0' 꼬리 제거
+                            s_id_str = str(s_item['id']).strip()
+                            if s_id_str.endswith(".0"):
+                                s_id_str = s_id_str[:-2]
+                            
                             try:
                                 if pd.isna(s_item.get('feedbacks')):
                                     s_item['feedbacks'] = []
@@ -238,7 +274,13 @@ def load_data():
                             if pd.isna(s_item.get('completed_at')) or str(s_item.get('completed_at')) in ('', 'None', 'nan'):
                                 s_item['completed_at'] = None
 
-                            matching_local = next((l for l in local_repo_before_merge if str(l['id']) == s_id_str), None)
+                            # 2. 로컬 데이터의 ID도 '.0' 꼬리를 제거한 후 비교 매칭
+                            def clean_loc_id(loc_id):
+                                lid = str(loc_id).strip()
+                                return lid[:-2] if lid.endswith(".0") else lid
+                                
+                            matching_local = next((l for l in local_repo_before_merge if clean_loc_id(l['id']) == s_id_str), None)
+                            
                             if matching_local and 'file_data' in matching_local:
                                 s_item['file_data'] = matching_local['file_data']
                             else:
@@ -1605,30 +1647,38 @@ def show_main_page():
 
                 if st.form_submit_button("실험실에 배포하기", use_container_width=True):
                     if proj_name and uploaded_file:
-                        with st.spinner("산출물을 실험실에 업로드하는 중입니다..."):
+                        with st.spinner("구글 드라이브 서버에 파일을 안전하게 업로드 중입니다... (용량에 따라 다소 시간이 소요될 수 있습니다)"):
                             existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
                             new_id = max(existing_ids) + 1 if existing_ids else 1
                             auto_dept = get_user_dept(current_user_id)
                             ensure_category_exists(auto_dept)
-                            new_item = {
-                                "id": new_id,
-                                "title": proj_name,
-                                "category": auto_dept,
-                                "desc": proj_desc,
-                                "author": st.session_state.get('user_id', '익명'),
-                                "date": now_kst().strftime("%Y-%m-%d %H:%M"),
-                                "filename": uploaded_file.name,
-                                "file_data": uploaded_file.read(),
-                                "feedbacks": [],
-                                "issues": [],
-                                "completed_at": None
-                            }
-                            st.session_state['app_data']['repository'].append(new_item)
-                            save_data(st.session_state['app_data'])
-                        if st.session_state.get('last_save_status') != "fail":
-                            st.success("성공적으로 배포되었습니다.")
-                            st.balloons()
-                            st.rerun()
+                            
+                            try:
+                                # 구글 드라이브로 업로드하고 다이렉트 링크 발급받기
+                                direct_download_url = upload_to_gdrive_and_get_link(uploaded_file)
+                                
+                                new_item = {
+                                    "id": new_id,
+                                    "title": proj_name,
+                                    "category": auto_dept,
+                                    "desc": proj_desc,
+                                    "author": st.session_state.get('user_id', '익명'),
+                                    "date": now_kst().strftime("%Y-%m-%d %H:%M"),
+                                    "filename": uploaded_file.name,
+                                    "file_url": direct_download_url, # 다운로드 링크를 저장할 키 추가
+                                    "feedbacks": [],
+                                    "issues": [],
+                                    "completed_at": None
+                                }
+                                st.session_state['app_data']['repository'].append(new_item)
+                                save_data(st.session_state['app_data'])
+                                
+                                if st.session_state.get('last_save_status') != "fail":
+                                    st.success("성공적으로 배포되었습니다.")
+                                    st.balloons()
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"구글 드라이브 업로드 중 오류가 발생했습니다: {e}")
                     else:
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
 
@@ -1683,9 +1733,17 @@ def show_main_page():
                     can_manage = (current_user == item['author'] or is_user_admin(current_user))
 
                     with action_col:
-                        file_ext = item['filename'].split('.')[-1].lower() if item.get('filename') else ''
-                        if item.get('file_data'):
-                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item['filename'], mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                        file_ext = item.get('filename', '').split('.')[-1].lower() if item.get('filename') else ''
+                        
+                        # 1. 구글 드라이브에 저장되어 다이렉트 링크(file_url)가 있는 경우
+                        if item.get('file_url'):
+                            st.link_button("📥 파일 다운로드", url=item['file_url'], use_container_width=True)
+                            
+                        # 2. 예전 방식으로 저장되어 서버 메모리에 데이터가 살아있는 경우 (호환성 유지)
+                        elif item.get('file_data') and len(item['file_data']) > 0:
+                            st.download_button(label="📥 파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                            
+                        # 3. 로컬 메모리가 초기화되어 파일도 없고 링크도 없는 경우
                         else:
                             st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
 
@@ -1753,13 +1811,13 @@ def show_main_page():
 
                     if item.get('file_data'):
                         if file_ext in ['py', 'txt', 'csv']:
-                            with st.expander(f"파일 미리보기 ({item['filename']})"):
+                            with st.expander(f"파일 미리보기 ({item.get('filename', '')})"):
                                 try:
                                     st.code(item['file_data'].decode('utf-8'), language='python' if file_ext == 'py' else 'text')
                                 except Exception:
                                     st.error("텍스트로 미리볼 수 없는 인코딩입니다.")
                         elif file_ext == 'html':
-                            with st.expander(f"파일 미리보기 ({item['filename']})"):
+                            with st.expander(f"파일 미리보기 ({item.get('filename', '')})"):
                                 st.caption("아래는 페이지 내 임베드 미리보기입니다. 전체 화면으로 보려면 위쪽의 '새 창에서 미리보기' 버튼을 이용해 주세요.")
                                 try:
                                     components.html(item['file_data'].decode('utf-8'), height=400, scrolling=True)
