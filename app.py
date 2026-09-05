@@ -1618,7 +1618,7 @@ def show_main_page():
     
     st.markdown("""
         <style>
-        /* 1. 라디오 그룹 컨테이너 (배경 투명, 가로 정렬, 간격 조정) */
+        /* 1. 전체 라디오 그룹 투명 배경 및 가로 정렬 */
         div[data-testid="stRadio"] > div[role="radiogroup"] {
             background-color: transparent !important;
             border: none !important;
@@ -1628,13 +1628,12 @@ def show_main_page():
             margin-bottom: 20px !important;
         }
 
-        /* 2. 동그라미(라디오 아이콘) 완벽 숨김 처리 */
-        /* stMarkdownContainer가 아닌 모든 형제 요소를 숨김으로써 버전 호환성 100% 확보 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] label > *:not([data-testid="stMarkdownContainer"]) {
+        /* 2. 동그라미(라디오 아이콘)만 선택해서 안전하게 숨김 */
+        div[data-testid="stRadio"] div[data-baseweb="radio"] {
             display: none !important;
         }
 
-        /* 3. 각 탭 텍스트 라벨 기본 스타일 (투명 배경) */
+        /* 3. 각 메뉴(라벨) 패딩 및 배경 초기화 */
         div[data-testid="stRadio"] > div[role="radiogroup"] label {
             background-color: transparent !important;
             border: none !important;
@@ -1642,30 +1641,34 @@ def show_main_page():
             margin: 0 !important;
             cursor: pointer !important;
             box-shadow: none !important;
-        }
-
-        /* 4. 탭 텍스트 폰트 설정 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] label p {
-            font-size: 16px !important;
-            font-weight: 500 !important;
-            color: var(--muted-foreground) !important;
-            margin: 0 !important;
-            padding-bottom: 4px !important;
             border-bottom: 3px solid transparent !important;
-            transition: all 0.2s ease !important;
+            border-radius: 0 !important;
         }
 
-        /* 5. 선택된 탭 텍스트 강조 (글씨 진하게 + 파란색 밑줄) */
-        div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"] p,
-        div[data-testid="stRadio"] > div[role="radiogroup"] label[aria-checked="true"] p {
-            color: var(--accent) !important;
-            font-weight: 800 !important;
-            border-bottom: 3px solid var(--accent) !important;
+        /* 4. 메뉴 텍스트 기본 스타일 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label p {
+            font-size: 17px !important;
+            font-weight: 500 !important;
+            color: #64748B !important;
+            margin: 0 !important;
+            padding-bottom: 6px !important;
+        }
+
+        /* 5. 선택된 메뉴 텍스트 및 하단 밑줄 강조 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"],
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[aria-checked="true"] {
+            border-bottom: 3px solid #0052FF !important;
         }
         
-        /* 6. 호버 효과 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"] p,
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[aria-checked="true"] p {
+            color: #0F172A !important;
+            font-weight: 800 !important;
+        }
+
+        /* 6. 마우스 호버 시 글씨 색상 진하게 */
         div[data-testid="stRadio"] > div[role="radiogroup"] label:hover p {
-            color: var(--foreground) !important;
+            color: #0F172A !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -2126,7 +2129,7 @@ def show_main_page():
 
         st.markdown("---")
         st.markdown("### 사이드바 [부서] 필터 항목 구성")
-        st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
+        st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 회원가입 시 입력한 부서명은 자동으로 이 목록 추가됩니다.")
         current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
         st.write("현재 등록된 부서 목록:", current_cats)
 
