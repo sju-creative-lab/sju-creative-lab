@@ -1628,18 +1628,24 @@ def show_main_page():
             margin-bottom: 20px !important;
         }
 
-        /* 2. 🔴 징그러운 원형 라디오 버튼 완벽 제거 🔴 */
-        /* input 태그 바로 다음에 오는 div(시각적 동그라미)를 타겟팅하여 숨김 */
-        div[data-testid="stRadio"] label input[type="radio"] + div {
+        /* 2. 동그라미(라디오 아이콘) 완벽 숨김 처리 */
+        /* 라디오 input을 감싸고 있는 div 전체를 숨겨서 동그라미 흔적을 100% 삭제 (:has 선택자 활용) */
+        div[data-testid="stRadio"] div[role="radiogroup"] label > div:has(input[type="radio"]) {
+            display: none !important;
+            width: 0 !important;
+            margin: 0 !important;
+        }
+        
+        /* 만약을 대비해 형제 요소 방식과 input 자체도 중복 숨김 */
+        div[data-testid="stRadio"] div[role="radiogroup"] label input[type="radio"] + div {
             display: none !important;
         }
-        /* 혹시 모를 네이티브 input 요소 숨김 */
-        div[data-testid="stRadio"] label input[type="radio"] {
+        div[data-testid="stRadio"] div[role="radiogroup"] label input[type="radio"] {
             display: none !important;
         }
 
         /* 3. 각 메뉴(라벨) 패딩 및 배경 초기화 */
-        div[data-testid="stRadio"] label {
+        div[data-testid="stRadio"] > div[role="radiogroup"] label {
             background-color: transparent !important;
             border: none !important;
             padding: 0 !important;
@@ -1648,28 +1654,28 @@ def show_main_page():
             box-shadow: none !important;
         }
 
-        /* 4. 메뉴 텍스트 기본 스타일 (회색, 밑줄 투명) */
-        div[data-testid="stRadio"] label p {
+        /* 4. 메뉴 텍스트 기본 스타일 (투명 밑줄로 공간 미리 확보) */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label p {
             font-size: 17px !important;
             font-weight: 500 !important;
             color: #64748B !important;
             margin: 0 !important;
-            padding: 4px 2px !important;
+            padding-bottom: 6px !important;
             border-bottom: 3px solid transparent !important;
             transition: all 0.2s ease !important;
         }
 
         /* 5. 선택된 메뉴 텍스트 및 하단 밑줄 강조 (파란색) */
-        div[data-testid="stRadio"] label[data-checked="true"] p,
-        div[data-testid="stRadio"] label[aria-checked="true"] p,
-        div[data-testid="stRadio"] label:has(input[type="radio"]:checked) p {
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"] p,
+        div[data-testid="stRadio"] > div[role="radiogroup"] label[aria-checked="true"] p,
+        div[data-testid="stRadio"] > div[role="radiogroup"] label:has(input[type="radio"]:checked) p {
             color: #0052FF !important;
             font-weight: 800 !important;
             border-bottom: 3px solid #0052FF !important;
         }
-
-        /* 6. 마우스 호버 시 글씨 색상 진하게 */
-        div[data-testid="stRadio"] label:hover p {
+        
+        /* 6. 호버 효과 */
+        div[data-testid="stRadio"] > div[role="radiogroup"] label:hover p {
             color: #0F172A !important;
         }
         </style>
@@ -1858,7 +1864,7 @@ def show_main_page():
             if repo_data_all:
                 st.info("사이드바 필터/검색어 조건에 맞는 산출물이 없습니다. 사이드바에서 필터를 초기화해 보세요.")
             else:
-                st.info("아직 공유된 산출물이 없습니다. 위의 업로드 영역에서 첫 산출물을 공유해 보세요.")
+                st.info("아직 공유된 산출물이 난습니다. 위의 업로드 영역에서 첫 산출물을 공유해 보세요.")
         else:
             for item in filtered_repo:
                 with st.container(border=True):
