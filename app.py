@@ -609,7 +609,7 @@ def record_timeline_completion(item):
     if started is not None:
         duration_hours = round((completed - started).total_seconds() / 3600, 1)
 
-    st.session_state['app_data'].setdefault('timeline_log', []).append({
+    st.session_state['app_data'].setdefault('timeline_log', []append({
         "id": item['id'],
         "title": item['title'],
         "category": item.get('category', '일반'),
@@ -1416,7 +1416,6 @@ def render_department_timeline():
     timeline_df = pd.DataFrame(rows)
     timeline_df = timeline_df.sort_values("시작")
 
-    # [추가] 차트 툴팁(Hover)과 X축 날짜/시간 포맷을 한국식 년/월/일 포맷으로 변경
     fig = px.timeline(
         timeline_df, x_start="시작", x_end="종료", y="프로젝트명",
         color="상태",
@@ -1754,11 +1753,11 @@ def show_main_page():
                         # 1. 구글 드라이브에 저장되어 다이렉트 링크(file_url)가 있는 경우
                         file_url = item.get('file_url')
                         if isinstance(file_url, str) and file_url.startswith("http"):
-                            st.link_button("파일 다운로드", url=file_url, use_container_width=True)
+                            st.link_button("📥 파일 다운로드", url=file_url, use_container_width=True)
                             
                         # 2. 예전 방식으로 저장되어 서버 메모리에 데이터가 살아있는 경우 (호환성 유지)
                         elif item.get('file_data') and len(item['file_data']) > 0:
-                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                            st.download_button(label="📥 파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
                             
                         # 3. 로컬 메모리가 초기화되어 파일도 없고 링크도 없는 경우
                         else:
@@ -1800,15 +1799,16 @@ def show_main_page():
                                         st.success("완료 상태가 취소되어 다시 진행중으로 표시됩니다.")
                                         st.rerun()
                         with m_col3:
-                            if st.button("산출물 삭제", key=f"del_{item['id']}", use_container_width=True):
-                                st.session_state['app_data']['repository'] = [
-                                    p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
-                                ]
-                                save_data(st.session_state['app_data'])
-                                if st.session_state.get('last_save_status') == "fail":
-                                    st.stop()
-                                st.success("삭제되었습니다. (해당 산출물은 제작 타임라인 집계에서도 제외됩니다)")
-                                st.rerun()
+                            with st.popover("산출물 삭제", use_container_width=True):
+                                st.markdown("⚠️ **정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
+                                if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
+                                    st.session_state['app_data']['repository'] = [
+                                        p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
+                                    ]
+                                    save_data(st.session_state['app_data'])
+                                    if st.session_state.get('last_save_status') != "fail":
+                                        st.success("삭제되었습니다.")
+                                        st.rerun()
 
                     if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
                         with st.form(f"edit_form_{item['id']}"):
@@ -1846,10 +1846,11 @@ def show_main_page():
                             fb_display_name = get_display_name(fb['user'])
                             st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
 
-                        fb_input = st.text_input("의견을 남겨주세요", key=f"fb_in_{item['id']}", placeholder="예: 좋은 아이디어네요! 이 부분은 이렇게 개선하면 어떨까요?")
-                        if st.button("피드백 등록", key=f"fb_btn_{item['id']}"):
-                            if fb_input:
-                                item['feedbacks'].append({"user": st.session_state.get('user_id', '익명'), "time": now_kst().strftime("%Y-%m-%d %H:%M"), "text": fb_input})
+                        with st.form(key=f"fb_form_{item['id']}", clear_on_submit=True):
+                            fb_input = st.text_input("의견을 남겨주세요", placeholder="예: 좋은 아이디어네요! 이 부분은 이렇게 개선하면 어떨까요?")
+                            fb_submit = st.form_submit_button("피드백 등록")
+                            if fb_submit and fb_input.strip():
+                                item['feedbacks'].append({"user": st.session_state.get('user_id', '익명'), "time": now_kst().strftime("%Y-%m-%d %H:%M"), "text": fb_input.strip()})
                                 save_data(st.session_state['app_data'])
                                 if st.session_state.get('last_save_status') != "fail":
                                     st.rerun()
@@ -2089,22 +2090,27 @@ def show_sidebar():
 
         cat_options = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
 
-        st.selectbox("부서", options=cat_options, key=_cat_key)
-        st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key=_sort_key)
-        st.text_input("검색어", placeholder="프로젝트 검색...", key=_kw_key)
-
-        cb1, cb2 = st.columns(2)
-        with cb1:
-            if st.button("검색", use_container_width=True):
-                st.session_state['repo_page'] = 1
-                st.session_state['dashboard_page'] = 1
-                st.rerun()
-        with cb2:
-            if st.button("초기화", use_container_width=True):
-                st.session_state['filter_reset_counter'] += 1
-                st.session_state['repo_page'] = 1
-                st.session_state['dashboard_page'] = 1
-                st.rerun()
+        with st.form(key=f"sidebar_search_form_{_reset_suffix}"):
+            st.selectbox("부서", options=cat_options, key=_cat_key)
+            st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key=_sort_key)
+            st.text_input("검색어 (입력 후 Enter)", placeholder="프로젝트 검색...", key=_kw_key)
+            
+            cb1, cb2 = st.columns(2)
+            with cb1:
+                search_btn = st.form_submit_button("검색", use_container_width=True)
+            with cb2:
+                reset_btn = st.form_submit_button("초기화", use_container_width=True)
+                
+        if search_btn:
+            st.session_state['repo_page'] = 1
+            st.session_state['dashboard_page'] = 1
+            st.rerun()
+            
+        if reset_btn:
+            st.session_state['filter_reset_counter'] += 1
+            st.session_state['repo_page'] = 1
+            st.session_state['dashboard_page'] = 1
+            st.rerun()
 
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("""
