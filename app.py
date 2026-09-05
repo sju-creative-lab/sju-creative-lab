@@ -197,7 +197,7 @@ def load_data():
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 _log("st.connection 객체 생성 성공")
             except Exception as e_conn:
-                _log(f"❌ st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn, 'connection_create')}", "error")
+                _log(f"[오류] st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn, 'connection_create')}", "error")
                 conn = None
 
             if conn is not None:
@@ -258,9 +258,9 @@ def load_data():
                         local_data['users_db'] = merged_users
                         _log(f"Users 병합 완료: 총 {len(merged_users)}건 (승인 절차 폐지로 전원 승인 처리)")
                     else:
-                        _log("ℹ️ Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
+                        _log("[안내] Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
                 except Exception as e_users:
-                    _log(f"❌ Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
+                    _log(f"[오류] Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
 
                 try:
                     repo_df = conn.read(worksheet="Repository", ttl=0)
@@ -321,7 +321,7 @@ def load_data():
                     else:
                         local_data['repository'] = []
                 except Exception as e_repo:
-                    _log(f"❌ Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
+                    _log(f"[오류] Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
 
                 try:
                     cat_df = conn.read(worksheet="Categories", ttl=0)
@@ -343,7 +343,7 @@ def load_data():
                         local_data['survey'] = []
                 except Exception as e_sv:
                     local_data['survey'] = local_data.get('survey', [])
-                    _log(f"ℹ️ survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
+                    _log(f"[안내] survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
 
                 try:
                     timeline_df = conn.read(worksheet="TimelineLog", ttl=0)
@@ -354,7 +354,7 @@ def load_data():
         else:
             _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
     except Exception as e:
-        _log(f"❌ Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e, 'init')}", "error")
+        _log(f"[오류] Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e, 'init')}", "error")
 
     return local_data
 
@@ -496,10 +496,10 @@ def save_data(data):
             full_tb = traceback.format_exc()
             st.session_state.setdefault('gsheets_full_traceback', []).append(("save_data", full_tb))
             err_txt = f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'}"
-            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
+            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"[오류] save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
             if core_save_failed:
                 st.session_state['last_save_status'] = "fail"
-                st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 정있습니다. 오류: {err_txt}")
+                st.error(f"[경고] 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 정있습니다. 오류: {err_txt}")
             else:
                 st.session_state['last_save_status'] = "success"
     else:
@@ -1176,11 +1176,11 @@ def _render_preview_body(filename, file_url, legacy_data):
             st.error("텍스트로 변환할 수 없는 파일 형식이거나 인코딩 오류입니다.")
 
 if hasattr(st, "dialog"):
-    @st.dialog("👀 산출물 미리보기", width="large")
+    @st.dialog("산출물 미리보기", width="large")
     def show_preview_modal(filename, file_url, legacy_data):
         _render_preview_body(filename, file_url, legacy_data)
 elif hasattr(st, "experimental_dialog"):
-    @st.experimental_dialog("👀 산출물 미리보기", width="large")
+    @st.experimental_dialog("산출물 미리보기", width="large")
     def show_preview_modal(filename, file_url, legacy_data):
         _render_preview_body(filename, file_url, legacy_data)
 else:
@@ -1628,7 +1628,7 @@ def show_main_page():
     
     st.markdown("""
         <style>
-        /* 1. 라디오 그룹 컨테이너 (배경 투명, 가로 정렬, 간격 조정) */
+        /* 1. 전체 라디오 그룹 배경 투명 및 간격 조정 */
         div[data-testid="stRadio"] > div[role="radiogroup"] {
             background-color: transparent !important;
             border: none !important;
@@ -1638,21 +1638,15 @@ def show_main_page():
             margin-bottom: 20px !important;
         }
 
-        /* 2. 🔴 징그러운 원형 라디오 버튼 완벽 제거 🔴 */
-        div[data-testid="stRadio"] input[type="radio"] + div {
-            display: none !important;
-        }
-        
+        /* 2. 원형 라디오 버튼 완벽 제거 */
+        /* 선생님께서 찾아주신 클래스 직접 제어 */
         div[data-testid="stRadio"] .st-emotion-cache-he5m1v,
         div[data-testid="stRadio"] .eqiohyi4,
         div[data-testid="stRadio"] .eqiohyi5 {
             display: none !important;
-            width: 0 !important;
-            height: 0 !important;
-            opacity: 0 !important;
         }
 
-        /* 3. 각 메뉴(라벨) 패딩 및 배경 초기화 */
+        /* 3. 각 탭 텍스트 라벨 기본 스타일 (투명 배경) */
         div[data-testid="stRadio"] label {
             background-color: transparent !important;
             border: none !important;
@@ -1662,29 +1656,28 @@ def show_main_page():
             box-shadow: none !important;
         }
 
-        /* 4. 메뉴 텍스트 기본 스타일 (회색, 투명 밑줄로 공간 확보) */
+        /* 4. 탭 텍스트 폰트 설정 */
         div[data-testid="stRadio"] label p {
-            font-size: 17px !important;
+            font-size: 16px !important;
             font-weight: 500 !important;
-            color: #64748B !important;
+            color: var(--muted-foreground) !important;
             margin: 0 !important;
-            padding-bottom: 6px !important;
+            padding-bottom: 4px !important;
             border-bottom: 3px solid transparent !important;
             transition: all 0.2s ease !important;
         }
 
-        /* 5. 선택된 메뉴 텍스트 및 하단 밑줄 강조 (파란색) */
+        /* 5. 선택된 탭 텍스트 강조 (글씨 진하게 + 파란색 밑줄) */
         div[data-testid="stRadio"] label[data-checked="true"] p,
-        div[data-testid="stRadio"] label[aria-checked="true"] p,
-        div[data-testid="stRadio"] label:has(input[type="radio"]:checked) p {
-            color: #0052FF !important;
+        div[data-testid="stRadio"] label[aria-checked="true"] p {
+            color: var(--accent) !important;
             font-weight: 800 !important;
-            border-bottom: 3px solid #0052FF !important;
+            border-bottom: 3px solid var(--accent) !important;
         }
-
-        /* 6. 마우스 호버 시 글씨 색상 진하게 */
+        
+        /* 6. 호버 효과 */
         div[data-testid="stRadio"] label:hover p {
-            color: #0F172A !important;
+            color: var(--foreground) !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -1814,7 +1807,7 @@ def show_main_page():
                 proj_name = st.text_input("프로젝트 명", placeholder="예: 학사행정 챗봇 자동응답 시스템")
                 proj_desc = st.text_area("산출물 설명", placeholder="예: 학생 문의를 자동으로 분류하고 답변하는 AI 챗봇입니다.")
                 
-                # 🔴 변경점: 다중 파일 첨부 허용
+                # 변경점: 다중 파일 첨부 허용
                 uploaded_files = st.file_uploader("산출물 파일 첨부 (여러 개 선택 가능)", accept_multiple_files=True)
                 st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML, 파이썬 파일 등은 새 창에서 미리보기가 가능합니다.")
 
@@ -1844,7 +1837,7 @@ def show_main_page():
                                     "date": now_kst().strftime("%Y-%m-%d %H:%M"),
                                     "filename": file_list[0]['filename'] if file_list else "",
                                     "file_url": file_list[0]['file_url'] if file_list else "",
-                                    "files": file_list, # 🔴 새로운 다중 파일 저장 리스트
+                                    "files": file_list,
                                     "feedbacks": [],
                                     "issues": [],
                                     "completed_at": None
@@ -1854,7 +1847,6 @@ def show_main_page():
                                 
                                 if st.session_state.get('last_save_status') != "fail":
                                     st.success("성공적으로 배포되었습니다.")
-                                    st.balloons()
                                     st.rerun()
                     else:
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
@@ -1916,10 +1908,9 @@ def show_main_page():
                         
                     can_manage = (current_user_str == item_author_str or is_user_admin(st.session_state.get('user_id')))
 
-                    # 🔴 변경점: 다중 파일 목록 UI 출력 
+                    # 변경점: 다중 파일 목록 UI 출력 
                     with action_col:
                         existing_files = item.get("files", [])
-                        # 이전 버전(단일 파일)으로 업로드된 데이터의 호환성 유지
                         if item.get("filename") and not existing_files:
                             existing_files = [{"filename": item["filename"], "file_url": item.get("file_url"), "file_data": item.get("file_data", b"")}]
                             
@@ -1931,14 +1922,14 @@ def show_main_page():
                                 file_ext = f_name.split('.')[-1].lower() if f_name else ''
                                 
                                 with st.container(border=True):
-                                    st.markdown(f"<div style='font-size:13px; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-bottom:6px;' title='{f_name}'>📄 {f_name}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='font-size:13px; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-bottom:6px;' title='{f_name}'>{f_name}</div>", unsafe_allow_html=True)
                                     
                                     btn_c1, btn_c2 = st.columns(2)
                                     with btn_c1:
                                         if f_info.get('file_url') and str(f_info['file_url']).startswith("http"):
-                                            st.link_button("📥 다운", url=f_info['file_url'], use_container_width=True)
+                                            st.link_button("다운로드", url=f_info['file_url'], use_container_width=True)
                                         elif f_info.get('file_data') and len(f_info['file_data']) > 0:
-                                            st.download_button("📥 다운", data=f_info['file_data'], file_name=f_name, key=f"dl_{item['id']}_{f_idx}", use_container_width=True)
+                                            st.download_button("다운로드", data=f_info['file_data'], file_name=f_name, key=f"dl_{item['id']}_{f_idx}", use_container_width=True)
                                         else:
                                             st.button("만료", disabled=True, key=f"dl_{item['id']}_{f_idx}", use_container_width=True)
                                             
@@ -1947,7 +1938,7 @@ def show_main_page():
                                         has_file = (f_info.get('file_url') and str(f_info['file_url']).startswith("http")) or (f_info.get('file_data') and len(f_info['file_data']) > 0)
                                         
                                         if preview_supported and has_file:
-                                            if st.button("👀 보기", key=f"pv_{item['id']}_{f_idx}", use_container_width=True):
+                                            if st.button("미리보기", key=f"pv_{item['id']}_{f_idx}", use_container_width=True):
                                                 show_preview_modal(f_name, f_info.get('file_url'), f_info.get('file_data'))
 
                     if can_manage:
@@ -1978,7 +1969,7 @@ def show_main_page():
                                 st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
                                 if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
                                     
-                                    # 🔴 변경점: 프로젝트 완전 삭제 시 다중 파일 모두 구글 드라이브에서 삭제
+                                    # 변경점: 프로젝트 완전 삭제 시 다중 파일 모두 구글 드라이브에서 삭제
                                     files_to_delete = item.get("files", [])
                                     if not files_to_delete and item.get("file_url"):
                                         files_to_delete = [{"file_url": item["file_url"]}]
@@ -1995,13 +1986,13 @@ def show_main_page():
                                         st.success("삭제되었습니다.")
                                         st.rerun()
 
-                    # 🔴 변경점: 내용 수정 시 기존 첨부파일 삭제 및 새로운 다중 파일 추가 기능 구현
+                    # 변경점: 내용 수정 시 기존 첨부파일 삭제 및 새로운 다중 파일 추가 기능 구현
                     if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
                         with st.form(f"edit_form_{item['id']}"):
                             edit_title = st.text_input("프로젝트 명 수정", value=item['title'])
                             edit_desc = st.text_area("설명 수정", value=item['desc'])
                             
-                            st.markdown("###### 📎 첨부파일 관리")
+                            st.markdown("###### 첨부파일 관리")
                             existing_files_for_edit = item.get("files", [])
                             if item.get("filename") and not existing_files_for_edit:
                                 existing_files_for_edit = [{"filename": item["filename"], "file_url": item.get("file_url")}]
@@ -2010,7 +2001,7 @@ def show_main_page():
                             if existing_files_for_edit:
                                 st.caption("아래 목록에서 체크한 파일은 저장 시 **삭제**됩니다.")
                                 for i, f_info in enumerate(existing_files_for_edit):
-                                    del_flags.append(st.checkbox(f"🗑️ 삭제: {f_info.get('filename')}", key=f"del_{item['id']}_{i}"))
+                                    del_flags.append(st.checkbox(f"삭제: {f_info.get('filename')}", key=f"del_{item['id']}_{i}"))
                             else:
                                 st.caption("기존 첨부파일이 없습니다.")
                             
