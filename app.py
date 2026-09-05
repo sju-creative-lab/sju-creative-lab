@@ -91,7 +91,31 @@ def upload_to_gdrive_and_get_link(uploaded_file):
             raise Exception(f"업로드 에러: {result.get('error')}")
     else:
         raise Exception("서버 통신 실패 (URL을 확인해주세요)")
-
+        
+# ------------------------------------------
+# 구글 드라이브 파일 삭제 함수 (휴지통 이동)
+# ------------------------------------------
+def delete_from_gdrive(file_url):
+    if not file_url or "id=" not in file_url:
+        return
+        
+    # URL에서 구글 드라이브 고유 파일 ID만 추출
+    file_id = file_url.split("id=")[-1]
+    
+    # ⚠️ 중요: 기존과 동일한 선생님의 웹 앱 URL 유지
+    GAS_URL = "https://script.google.com/macros/s/AKfycbzhUPJU9D3A6FH9r5RPOlydHp4PjRqSw8sWfD-PZYMUfFqUewFLFdboW0JnPiOU6bA2UQ/exec"
+    
+    payload = {
+        "secret_key": "sju_secret_2026",
+        "action": "delete",
+        "file_id": file_id
+    }
+    
+    try:
+        requests.post(GAS_URL, json=payload)
+    except Exception as e:
+        # 삭제 실패 시 앱이 멈추지 않도록 에러만 출력 후 패스
+        print(f"드라이브 파일 삭제 실패: {e}")
 
 # ==========================================
 # 1. DB 연동 (구글 시트 & 로컬 하이브리드)
@@ -1753,11 +1777,11 @@ def show_main_page():
                         # 1. 구글 드라이브에 저장되어 다이렉트 링크(file_url)가 있는 경우
                         file_url = item.get('file_url')
                         if isinstance(file_url, str) and file_url.startswith("http"):
-                            st.link_button("📥 파일 다운로드", url=file_url, use_container_width=True)
+                            st.link_button("파일 다운로드", url=file_url, use_container_width=True)
                             
                         # 2. 예전 방식으로 저장되어 서버 메모리에 데이터가 살아있는 경우 (호환성 유지)
                         elif item.get('file_data') and len(item['file_data']) > 0:
-                            st.download_button(label="📥 파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
                             
                         # 3. 로컬 메모리가 초기화되어 파일도 없고 링크도 없는 경우
                         else:
@@ -1802,6 +1826,11 @@ def show_main_page():
                             with st.popover("산출물 삭제", use_container_width=True):
                                 st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
                                 if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
+                                    
+                                    # [추가된 부분] 구글 드라이브에서 실제 파일 휴지통으로 이동
+                                    if item.get('file_url'):
+                                        delete_from_gdrive(item['file_url'])
+                                        
                                     st.session_state['app_data']['repository'] = [
                                         p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
                                     ]
