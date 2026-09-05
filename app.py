@@ -1743,13 +1743,13 @@ def show_main_page():
                     with action_col:
                         file_ext = item.get('filename', '').split('.')[-1].lower() if item.get('filename') else ''
                         
-                        # 1. 구글 드라이브에 저장되어 다이렉트 링크(file_url)가 있는 경우
-                        if item.get('file_url'):
-                            st.link_button("📥 파일 다운로드", url=item['file_url'], use_container_width=True)
+# 1. 구글 드라이브에 저장되어 다이렉트 링크(file_url)가 있는 경우
+                        file_url = item.get('file_url')
+                        if isinstance(file_url, str) and file_url.startswith("http"):
+                            st.link_button("📥 파일 다운로드", url=file_url, use_container_width=True)
                             
                         # 2. 예전 방식으로 저장되어 서버 메모리에 데이터가 살아있는 경우 (호환성 유지)
                         elif item.get('file_data') and len(item['file_data']) > 0:
-                            st.download_button(label="📥 파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
                             
                         # 3. 로컬 메모리가 초기화되어 파일도 없고 링크도 없는 경우
                         else:
