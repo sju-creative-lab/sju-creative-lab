@@ -291,6 +291,14 @@ def load_data():
                                     s_item['issues'] = ast.literal_eval(str(s_item['issues']))
                             except Exception:
                                 s_item['issues'] = []
+                                
+                            try:
+                                if pd.isna(s_item.get('files')):
+                                    s_item['files'] = []
+                                else:
+                                    s_item['files'] = ast.literal_eval(str(s_item['files']))
+                            except Exception:
+                                s_item['files'] = []
 
                             if pd.isna(s_item.get('completed_at')) or str(s_item.get('completed_at')) in ('', 'None', 'nan'):
                                 s_item['completed_at'] = None
@@ -439,6 +447,8 @@ def save_data(data):
                 repo_df['feedbacks'] = repo_df['feedbacks'].apply(lambda x: str(x))
                 if 'issues' in repo_df.columns:
                     repo_df['issues'] = repo_df['issues'].apply(lambda x: str(x))
+                if 'files' in repo_df.columns:
+                    repo_df['files'] = repo_df['files'].apply(lambda x: str(x))
                 if 'completed_at' not in repo_df.columns:
                     repo_df['completed_at'] = None
                 try:
@@ -447,7 +457,7 @@ def save_data(data):
                     core_save_failed = True
                     raise e_r
             else:
-                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'feedbacks', 'issues', 'completed_at'])
+                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'files', 'feedbacks', 'issues', 'completed_at'])
                 try:
                     conn.update(worksheet="Repository", data=empty_df)
                 except Exception as e_r2:
@@ -489,7 +499,7 @@ def save_data(data):
             st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"❌ save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
             if core_save_failed:
                 st.session_state['last_save_status'] = "fail"
-                st.error(f"저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 정있습니다. 오류: {err_txt}")
+                st.error(f"⚠️ 구글 시트 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 정있습니다. 오류: {err_txt}")
             else:
                 st.session_state['last_save_status'] = "success"
     else:
@@ -1108,7 +1118,7 @@ def _render_preview_body(filename, file_url, legacy_data):
     if legacy_data and len(legacy_data) > 0:
         content = legacy_data
     elif file_url and str(file_url).startswith("http"):
-        with st.spinner("서버에서 파일을 실시간으로 불러오는 중입니다..."):
+        with st.spinner("구글 드라이브에서 파일을 실시간으로 불러오는 중입니다..."):
             try:
                 session = requests.Session()
                 r = session.get(file_url)
@@ -1166,11 +1176,11 @@ def _render_preview_body(filename, file_url, legacy_data):
             st.error("텍스트로 변환할 수 없는 파일 형식이거나 인코딩 오류입니다.")
 
 if hasattr(st, "dialog"):
-    @st.dialog("산출물 미리보기", width="large")
+    @st.dialog("👀 산출물 미리보기", width="large")
     def show_preview_modal(filename, file_url, legacy_data):
         _render_preview_body(filename, file_url, legacy_data)
 elif hasattr(st, "experimental_dialog"):
-    @st.experimental_dialog("산출물 미리보기", width="large")
+    @st.experimental_dialog("👀 산출물 미리보기", width="large")
     def show_preview_modal(filename, file_url, legacy_data):
         _render_preview_body(filename, file_url, legacy_data)
 else:
@@ -1628,11 +1638,14 @@ def show_main_page():
             margin-bottom: 20px !important;
         }
 
-        /* 2. 🔴 선생님께서 찾아주신 원형 아이콘 클래스 직접 타격하여 삭제 🔴 */
+        /* 2. 🔴 징그러운 원형 라디오 버튼 완벽 제거 🔴 */
+        div[data-testid="stRadio"] input[type="radio"] + div {
+            display: none !important;
+        }
+        
         div[data-testid="stRadio"] .st-emotion-cache-he5m1v,
         div[data-testid="stRadio"] .eqiohyi4,
-        div[data-testid="stRadio"] .eqiohyi5,
-        div[data-testid="stRadio"] div[data-baseweb="radio"] > div:first-child {
+        div[data-testid="stRadio"] .eqiohyi5 {
             display: none !important;
             width: 0 !important;
             height: 0 !important;
@@ -1640,7 +1653,7 @@ def show_main_page():
         }
 
         /* 3. 각 메뉴(라벨) 패딩 및 배경 초기화 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] label {
+        div[data-testid="stRadio"] label {
             background-color: transparent !important;
             border: none !important;
             padding: 0 !important;
@@ -1650,7 +1663,7 @@ def show_main_page():
         }
 
         /* 4. 메뉴 텍스트 기본 스타일 (회색, 투명 밑줄로 공간 확보) */
-        div[data-testid="stRadio"] > div[role="radiogroup"] label p {
+        div[data-testid="stRadio"] label p {
             font-size: 17px !important;
             font-weight: 500 !important;
             color: #64748B !important;
@@ -1661,16 +1674,16 @@ def show_main_page():
         }
 
         /* 5. 선택된 메뉴 텍스트 및 하단 밑줄 강조 (파란색) */
-        div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"] p,
-        div[data-testid="stRadio"] > div[role="radiogroup"] label[aria-checked="true"] p,
-        div[data-testid="stRadio"] > div[role="radiogroup"] label:has(input:checked) p {
+        div[data-testid="stRadio"] label[data-checked="true"] p,
+        div[data-testid="stRadio"] label[aria-checked="true"] p,
+        div[data-testid="stRadio"] label:has(input[type="radio"]:checked) p {
             color: #0052FF !important;
             font-weight: 800 !important;
             border-bottom: 3px solid #0052FF !important;
         }
 
         /* 6. 마우스 호버 시 글씨 색상 진하게 */
-        div[data-testid="stRadio"] > div[role="radiogroup"] label:hover p {
+        div[data-testid="stRadio"] label:hover p {
             color: #0F172A !important;
         }
         </style>
@@ -1800,20 +1813,28 @@ def show_main_page():
             with st.form("upload_form", clear_on_submit=True):
                 proj_name = st.text_input("프로젝트 명", placeholder="예: 학사행정 챗봇 자동응답 시스템")
                 proj_desc = st.text_area("산출물 설명", placeholder="예: 학생 문의를 자동으로 분류하고 답변하는 AI 챗봇입니다.")
-                uploaded_file = st.file_uploader("산출물 파일 첨부")
-                st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML 파일은 새 창에서 미리보기가 가능합니다.")
+                
+                # 🔴 변경점: 다중 파일 첨부 허용
+                uploaded_files = st.file_uploader("산출물 파일 첨부 (여러 개 선택 가능)", accept_multiple_files=True)
+                st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML, 파이썬 파일 등은 새 창에서 미리보기가 가능합니다.")
 
                 if st.form_submit_button("실험실에 배포하기", use_container_width=True):
-                    if proj_name and uploaded_file:
-                        with st.spinner("서버에 파일을 안전하게 업로드 중입니다... (용량에 따라 다소 시간이 소요될 수 있습니다)"):
+                    if proj_name and uploaded_files:
+                        with st.spinner("서버에 파일을 안전하게 업로드 중입니다... (여러 파일일 경우 다소 시간이 소요됩니다)"):
                             existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
                             new_id = max(existing_ids) + 1 if existing_ids else 1
                             auto_dept = get_user_dept(current_user_id)
                             ensure_category_exists(auto_dept)
                             
-                            try:
-                                direct_download_url = upload_to_gdrive_and_get_link(uploaded_file)
-                                
+                            file_list = []
+                            for uf in uploaded_files:
+                                try:
+                                    url = upload_to_gdrive_and_get_link(uf)
+                                    file_list.append({"filename": uf.name, "file_url": url})
+                                except Exception as e:
+                                    st.error(f"'{uf.name}' 업로드 실패: {e}")
+                                    
+                            if file_list:
                                 new_item = {
                                     "id": new_id,
                                     "title": proj_name,
@@ -1821,8 +1842,9 @@ def show_main_page():
                                     "desc": proj_desc,
                                     "author": st.session_state.get('user_id', '익명'),
                                     "date": now_kst().strftime("%Y-%m-%d %H:%M"),
-                                    "filename": uploaded_file.name,
-                                    "file_url": direct_download_url,
+                                    "filename": file_list[0]['filename'] if file_list else "",
+                                    "file_url": file_list[0]['file_url'] if file_list else "",
+                                    "files": file_list, # 🔴 새로운 다중 파일 저장 리스트
                                     "feedbacks": [],
                                     "issues": [],
                                     "completed_at": None
@@ -1834,8 +1856,6 @@ def show_main_page():
                                     st.success("성공적으로 배포되었습니다.")
                                     st.balloons()
                                     st.rerun()
-                            except Exception as e:
-                                st.error(f"서버에 업로드 중 오류가 발생했습니다: {e}")
                     else:
                         st.error("프로젝트 명과 파일을 모두 첨부해 주세요.")
 
@@ -1896,23 +1916,39 @@ def show_main_page():
                         
                     can_manage = (current_user_str == item_author_str or is_user_admin(st.session_state.get('user_id')))
 
+                    # 🔴 변경점: 다중 파일 목록 UI 출력 
                     with action_col:
-                        file_ext = item.get('filename', '').split('.')[-1].lower() if item.get('filename') else ''
-                        
-                        file_url = item.get('file_url')
-                        if isinstance(file_url, str) and file_url.startswith("http"):
-                            st.link_button("파일 다운로드", url=file_url, use_container_width=True)
-                        elif item.get('file_data') and len(item['file_data']) > 0:
-                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
+                        existing_files = item.get("files", [])
+                        # 이전 버전(단일 파일)으로 업로드된 데이터의 호환성 유지
+                        if item.get("filename") and not existing_files:
+                            existing_files = [{"filename": item["filename"], "file_url": item.get("file_url"), "file_data": item.get("file_data", b"")}]
+                            
+                        if not existing_files:
+                            st.markdown("<div style='text-align:center; padding:10px; color:var(--muted-foreground); font-size:12px; background:var(--muted); border-radius:8px;'>첨부파일 없음</div>", unsafe_allow_html=True)
                         else:
-                            st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
-
-                        preview_supported = file_ext in ['html', 'htm', 'py', 'txt', 'csv', 'json', 'js', 'css', 'md']
-                        has_file = (isinstance(file_url, str) and file_url.startswith("http")) or (item.get('file_data') and len(item['file_data']) > 0)
-                        
-                        if preview_supported and has_file:
-                            if st.button("미리보기", key=f"preview_btn_{item['id']}", use_container_width=True):
-                                show_preview_modal(item.get('filename', ''), file_url, item.get('file_data'))
+                            for f_idx, f_info in enumerate(existing_files):
+                                f_name = f_info.get("filename", "")
+                                file_ext = f_name.split('.')[-1].lower() if f_name else ''
+                                
+                                with st.container(border=True):
+                                    st.markdown(f"<div style='font-size:13px; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-bottom:6px;' title='{f_name}'>📄 {f_name}</div>", unsafe_allow_html=True)
+                                    
+                                    btn_c1, btn_c2 = st.columns(2)
+                                    with btn_c1:
+                                        if f_info.get('file_url') and str(f_info['file_url']).startswith("http"):
+                                            st.link_button("📥 다운", url=f_info['file_url'], use_container_width=True)
+                                        elif f_info.get('file_data') and len(f_info['file_data']) > 0:
+                                            st.download_button("📥 다운", data=f_info['file_data'], file_name=f_name, key=f"dl_{item['id']}_{f_idx}", use_container_width=True)
+                                        else:
+                                            st.button("만료", disabled=True, key=f"dl_{item['id']}_{f_idx}", use_container_width=True)
+                                            
+                                    with btn_c2:
+                                        preview_supported = file_ext in ['html', 'htm', 'py', 'txt', 'csv', 'json', 'js', 'css', 'md']
+                                        has_file = (f_info.get('file_url') and str(f_info['file_url']).startswith("http")) or (f_info.get('file_data') and len(f_info['file_data']) > 0)
+                                        
+                                        if preview_supported and has_file:
+                                            if st.button("👀 보기", key=f"pv_{item['id']}_{f_idx}", use_container_width=True):
+                                                show_preview_modal(f_name, f_info.get('file_url'), f_info.get('file_data'))
 
                     if can_manage:
                         m_col1, m_col2, m_col3, m_spacer = st.columns([1.3, 1.3, 1.3, 2.1])
@@ -1942,8 +1978,14 @@ def show_main_page():
                                 st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
                                 if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
                                     
-                                    if item.get('file_url'):
-                                        delete_from_gdrive(item['file_url'])
+                                    # 🔴 변경점: 프로젝트 완전 삭제 시 다중 파일 모두 구글 드라이브에서 삭제
+                                    files_to_delete = item.get("files", [])
+                                    if not files_to_delete and item.get("file_url"):
+                                        files_to_delete = [{"file_url": item["file_url"]}]
+                                        
+                                    for f_info in files_to_delete:
+                                        if f_info.get('file_url'):
+                                            delete_from_gdrive(f_info['file_url'])
                                         
                                     st.session_state['app_data']['repository'] = [
                                         p for p in st.session_state['app_data']['repository'] if str(p['id']) != str(item['id'])
@@ -1953,19 +1995,60 @@ def show_main_page():
                                         st.success("삭제되었습니다.")
                                         st.rerun()
 
+                    # 🔴 변경점: 내용 수정 시 기존 첨부파일 삭제 및 새로운 다중 파일 추가 기능 구현
                     if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
                         with st.form(f"edit_form_{item['id']}"):
                             edit_title = st.text_input("프로젝트 명 수정", value=item['title'])
                             edit_desc = st.text_area("설명 수정", value=item['desc'])
-                            save_edit_btn = st.form_submit_button("수정 내용 저장")
+                            
+                            st.markdown("###### 📎 첨부파일 관리")
+                            existing_files_for_edit = item.get("files", [])
+                            if item.get("filename") and not existing_files_for_edit:
+                                existing_files_for_edit = [{"filename": item["filename"], "file_url": item.get("file_url")}]
+                            
+                            del_flags = []
+                            if existing_files_for_edit:
+                                st.caption("아래 목록에서 체크한 파일은 저장 시 **삭제**됩니다.")
+                                for i, f_info in enumerate(existing_files_for_edit):
+                                    del_flags.append(st.checkbox(f"🗑️ 삭제: {f_info.get('filename')}", key=f"del_{item['id']}_{i}"))
+                            else:
+                                st.caption("기존 첨부파일이 없습니다.")
+                            
+                            new_uploads = st.file_uploader("새 파일 추가 (여러 개 선택 가능)", accept_multiple_files=True, key=f"new_up_{item['id']}")
+                            
+                            save_edit_btn = st.form_submit_button("수정 내용 저장", type="primary")
+                            
                             if save_edit_btn:
-                                item['title'] = edit_title
-                                item['desc'] = edit_desc
-                                save_data(st.session_state['app_data'])
-                                if st.session_state.get('last_save_status') != "fail":
-                                    st.session_state[f"edit_toggle_{item['id']}"] = False
-                                    st.success("수정되었습니다.")
-                                    st.rerun()
+                                with st.spinner("변경사항을 저장하고 파일을 업데이트 중입니다..."):
+                                    updated_files = []
+                                    # 1. 체크된 기존 파일 삭제 처리
+                                    for i, f_info in enumerate(existing_files_for_edit):
+                                        if del_flags[i]:
+                                            if f_info.get('file_url'):
+                                                delete_from_gdrive(f_info['file_url'])
+                                        else:
+                                            updated_files.append(f_info)
+                                    
+                                    # 2. 새로운 파일 업로드 처리
+                                    for uf in new_uploads:
+                                        try:
+                                            new_url = upload_to_gdrive_and_get_link(uf)
+                                            updated_files.append({"filename": uf.name, "file_url": new_url})
+                                        except Exception as e:
+                                            st.error(f"'{uf.name}' 업로드 실패: {e}")
+                                    
+                                    # 3. 데이터 갱신
+                                    item['title'] = edit_title
+                                    item['desc'] = edit_desc
+                                    item['files'] = updated_files
+                                    item['filename'] = updated_files[0]['filename'] if updated_files else ""
+                                    item['file_url'] = updated_files[0]['file_url'] if updated_files else ""
+                                    
+                                    save_data(st.session_state['app_data'])
+                                    if st.session_state.get('last_save_status') != "fail":
+                                        st.session_state[f"edit_toggle_{item['id']}"] = False
+                                        st.success("수정되었습니다.")
+                                        st.rerun()
 
                     st.write("")
 
@@ -2132,7 +2215,7 @@ def show_main_page():
 
         st.markdown("---")
         st.markdown("### 사이드바 [부서] 필터 항목 구성")
-        st.caption("회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
+        st.caption("이 항목은 구글 스프레드시트의 'Categories' 탭과 연동됩니다. 회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
         current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
         st.write("현재 등록된 부서 목록:", current_cats)
 
