@@ -10,6 +10,7 @@ import base64
 import traceback
 import math
 import time
+import requests
 import streamlit.components.v1 as components
 
 # 구글 드라이브 연동용 라이브러리 추가
@@ -57,10 +58,6 @@ def safe_show_logo(width=None, use_container_width=False):
             f"</div>",
             unsafe_allow_html=True
         )
-
-
-import requests
-import base64
 
 # ------------------------------------------
 # 구글 드라이브 우회 업로드 함수 (GAS 연동)
@@ -1111,6 +1108,62 @@ else:
             st.markdown("#### 접근 안내")
             _render_abnormal_access_body()
 
+# ==========================================
+# 3-2. 파일 미리보기 모달 팝업 (코드 & HTML)
+# ==========================================
+def _render_preview_body(filename, file_url, legacy_data):
+    file_ext = filename.split('.')[-1].lower() if filename else ''
+    content = None
+    
+    # 1. 파일 데이터 가져오기 (로컬 캐시 우선, 없으면 드라이브에서 실시간 다운로드)
+    if legacy_data and len(legacy_data) > 0:
+        content = legacy_data
+    elif file_url and str(file_url).startswith("http"):
+        with st.spinner("구글 드라이브에서 파일을 실시간으로 불러오는 중입니다..."):
+            try:
+                r = requests.get(file_url)
+                if r.status_code == 200:
+                    content = r.content
+                else:
+                    st.error("파일에 접근할 수 없습니다. 권한을 확인해 주세요.")
+                    return
+            except Exception as e:
+                st.error(f"통신 에러가 발생했습니다: {e}")
+                return
+    
+    if not content:
+        st.error("파일 데이터를 가져오지 못했습니다.")
+        return
+
+    # 2. 파일 확장자에 맞게 화면 렌더링
+    if file_ext in ['html', 'htm']:
+        st.caption("웹 페이지(HTML) 렌더링 화면입니다.")
+        try:
+            html_str = content.decode('utf-8')
+            components.html(html_str, height=550, scrolling=True)
+        except Exception:
+            st.error("HTML 파일을 읽을 수 없는 인코딩입니다.")
+    else:
+        lang = 'python' if file_ext == 'py' else 'javascript' if file_ext == 'js' else 'css' if file_ext == 'css' else 'json' if file_ext == 'json' else 'text'
+        st.caption(f"소스코드 및 텍스트 파일 미리보기입니다. ({lang})")
+        try:
+            text_str = content.decode('utf-8')
+            st.code(text_str, language=lang)
+        except Exception:
+            st.error("텍스트로 변환할 수 없는 파일 형식이거나 인코딩 오류입니다.")
+
+# Streamlit 버전에 따른 모달 데코레이터 적용
+if hasattr(st, "dialog"):
+    @st.dialog("👀 산출물 미리보기", width="large")
+    def show_preview_modal(filename, file_url, legacy_data):
+        _render_preview_body(filename, file_url, legacy_data)
+elif hasattr(st, "experimental_dialog"):
+    @st.experimental_dialog("👀 산출물 미리보기", width="large")
+    def show_preview_modal(filename, file_url, legacy_data):
+        _render_preview_body(filename, file_url, legacy_data)
+else:
+    def show_preview_modal(filename, file_url, legacy_data):
+        st.warning("현재 Streamlit 버전에서는 모달 팝업을 지원하지 않습니다. 버전을 업데이트해 주세요.")
 
 # ==========================================
 # 3. 로그인 및 회원가입 화면
@@ -1774,30 +1827,22 @@ def show_main_page():
                     with action_col:
                         file_ext = item.get('filename', '').split('.')[-1].lower() if item.get('filename') else ''
                         
-                        # 1. 구글 드라이브에 저장되어 다이렉트 링크(file_url)가 있는 경우
+                        # [다운로드 버튼 영역]
                         file_url = item.get('file_url')
                         if isinstance(file_url, str) and file_url.startswith("http"):
-                            st.link_button("파일 다운로드", url=file_url, use_container_width=True)
-                            
-                        # 2. 예전 방식으로 저장되어 서버 메모리에 데이터가 살아있는 경우 (호환성 유지)
+                            st.link_button("📥 파일 다운로드", url=file_url, use_container_width=True)
                         elif item.get('file_data') and len(item['file_data']) > 0:
-                            st.download_button(label="파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
-                            
-                        # 3. 로컬 메모리가 초기화되어 파일도 없고 링크도 없는 경우
+                            st.download_button(label="📥 파일 다운로드", data=item['file_data'], file_name=item.get('filename', 'download'), mime="application/octet-stream", key=f"dl_{item['id']}", use_container_width=True)
                         else:
                             st.button("다운로드 만료됨", disabled=True, key=f"dl_{item['id']}", use_container_width=True)
 
-                        if item.get('file_data') and file_ext == 'html':
-                            b64 = base64.b64encode(item['file_data']).decode()
-                            preview_html = f"""
-                                <a href="data:text/html;base64,{b64}" target="_blank"
-                                   style="display:block; text-align:center; padding:8px 0; margin-top:6px;
-                                          background:var(--foreground); color:var(--background); border-radius:10px;
-                                          font-size:14px; text-decoration:none; font-weight:500;">
-                                   새 창에서 미리보기
-                                </a>
-                            """
-                            st.markdown(preview_html, unsafe_allow_html=True)
+                        # [추가된 모달 미리보기 버튼 영역]
+                        preview_supported = file_ext in ['html', 'htm', 'py', 'txt', 'csv', 'json', 'js', 'css', 'md']
+                        has_file = (isinstance(file_url, str) and file_url.startswith("http")) or (item.get('file_data') and len(item['file_data']) > 0)
+                        
+                        if preview_supported and has_file:
+                            if st.button("👀 미리보기", key=f"preview_btn_{item['id']}", use_container_width=True):
+                                show_preview_modal(item.get('filename', ''), file_url, item.get('file_data'))
 
                     if can_manage:
                         m_col1, m_col2, m_col3, m_spacer = st.columns([1.3, 1.3, 1.3, 2.1])
@@ -1854,21 +1899,6 @@ def show_main_page():
                                     st.rerun()
 
                     st.write("")
-
-                    if item.get('file_data'):
-                        if file_ext in ['py', 'txt', 'csv']:
-                            with st.expander(f"파일 미리보기 ({item.get('filename', '')})"):
-                                try:
-                                    st.code(item['file_data'].decode('utf-8'), language='python' if file_ext == 'py' else 'text')
-                                except Exception:
-                                    st.error("텍스트로 미리볼 수 없는 인코딩입니다.")
-                        elif file_ext == 'html':
-                            with st.expander(f"파일 미리보기 ({item.get('filename', '')})"):
-                                st.caption("아래는 페이지 내 임베드 미리보기입니다. 전체 화면으로 보려면 위쪽의 '새 창에서 미리보기' 버튼을 이용해 주세요.")
-                                try:
-                                    components.html(item['file_data'].decode('utf-8'), height=400, scrolling=True)
-                                except Exception:
-                                    st.error("HTML 미리보기를 렌더링할 수 없습니다.")
 
                     with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
                         for fb in item['feedbacks']:
