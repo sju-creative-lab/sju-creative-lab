@@ -1628,78 +1628,73 @@ def show_main_page():
     
     st.markdown("""
         <style>
-        /* 1. 라디오 그룹 전체 영역: 배경 투명, 줄바꿈 방지 */
+/* ==========================================
+           Linear UI 스타일 상단 메뉴 (Streamlit Radio 커스텀)
+           ========================================== */
+        /* 1. 라디오 그룹 컨테이너 (Segmented Control 스타일) */
         div[data-testid="stRadio"] {
-            width: 100% !important;
+            display: inline-block !important;
+            background-color: var(--muted) !important;
+            padding: 4px !important;
+            border-radius: 10px !important;
+            margin-bottom: 24px !important;
         }
         div[data-testid="stRadio"] > div[role="radiogroup"] {
-            background-color: transparent !important;
-            border: none !important;
             display: flex !important;
             flex-direction: row !important;
-            flex-wrap: nowrap !important; /* 🌟 줄바꿈 강제 방지 🌟 */
-            gap: 2rem !important;
+            flex-wrap: nowrap !important;
+            gap: 4px !important;
             padding: 0 !important;
-            margin-bottom: 20px !important;
-        }
-
-        /* 2. 동그라미 아이콘 완벽 제거 (텍스트 숨김 방지 적용) */
-        div[data-testid="stRadio"] div[role="radiogroup"] input[type="radio"] {
-            display: none !important;
-        }
-        
-        div[data-testid="stRadio"] div[role="radiogroup"] label > div:not(:has(p)) {
-            display: none !important;
-            width: 0 !important;
-            height: 0 !important;
             margin: 0 !important;
-            padding: 0 !important;
+            background: transparent !important;
         }
 
-        /* 3. 라벨 박스 초기화 (파란색 배경 박스 생기는 현상 원천 차단) */
+        /* 2. 동그라미 아이콘 완벽 제거 (논리적 구조 선택자) */
+        div[data-testid="stRadio"] label > div {
+            display: none !important; /* 라벨 안의 모든 하위 영역 일단 숨김 */
+        }
+        div[data-testid="stRadio"] label > div:has(p) {
+            display: flex !important; /* 텍스트(p)가 있는 영역만 명시적으로 노출 */
+            align-items: center !important;
+            justify-content: center !important;
+        }
+
+        /* 3. 기본 탭 텍스트 및 패딩 스타일 */
         div[data-testid="stRadio"] label {
             background: transparent !important;
-            background-color: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 0 !important;
+            padding: 6px 16px !important;
             margin: 0 !important;
+            border-radius: 6px !important;
             cursor: pointer !important;
-            min-width: fit-content !important;
+            transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
         }
-        
-        div[data-testid="stRadio"] div[role="radiogroup"] label > div {
-            background: transparent !important;
-        }
-
-        /* 4. 텍스트 기본 스타일 (줄바꿈 방지) */
         div[data-testid="stRadio"] label p {
-            font-size: 16px !important;
+            font-size: 14px !important;
             font-weight: 500 !important;
-            color: #64748B !important;
+            color: var(--muted-foreground) !important;
             margin: 0 !important;
-            padding: 4px 2px !important;
-            border-bottom: 3px solid transparent !important;
-            white-space: nowrap !important; /* 🌟 텍스트 줄바꿈 완벽 방지 🌟 */
-            transition: all 0.2s ease !important;
-            background: transparent !important;
-            background-color: transparent !important;
+            padding: 0 !important;
+            white-space: nowrap !important;
         }
 
-        /* 5. 선택된 탭 텍스트 및 하단 파란색 밑줄 강조 */
-        div[data-testid="stRadio"] label[data-checked="true"] p,
-        div[data-testid="stRadio"] label[aria-checked="true"] p,
-        div[data-testid="stRadio"] label:has(input:checked) p {
-            color: #0052FF !important; /* 파란 글씨 */
-            font-weight: 800 !important;
-            border-bottom: 3px solid #0052FF !important; /* 파란 밑줄 */
-            background: transparent !important; /* 배경색 투명 강제 유지 */
-            background-color: transparent !important;
+        /* 4. 마우스 호버 상태 */
+        div[data-testid="stRadio"] label:hover {
+            background-color: rgba(0, 0, 0, 0.04) !important;
         }
-
-        /* 6. 마우스 호버 효과 */
         div[data-testid="stRadio"] label:hover p {
-            color: #0F172A !important;
+            color: var(--foreground) !important;
+        }
+
+        /* 5. 활성화(선택된) 탭 - Linear UI 특유의 뎁스(그림자)와 대비 적용 */
+        div[data-testid="stRadio"] label[data-checked="true"],
+        div[data-testid="stRadio"] label:has(input:checked) {
+            background-color: var(--background) !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06) !important;
+        }
+        div[data-testid="stRadio"] label[data-checked="true"] p,
+        div[data-testid="stRadio"] label:has(input:checked) p {
+            color: var(--foreground) !important;
+            font-weight: 700 !important;
         }
         </style>
     """, unsafe_allow_html=True)
