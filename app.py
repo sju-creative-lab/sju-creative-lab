@@ -2107,9 +2107,9 @@ def show_main_page():
                                         if st.session_state.get('last_save_status') != "fail":
                                             st.rerun()
                             with ic3:
-                                if is_user_admin(current_user):
-                                    if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", use_container_width=True):
-                                        item['issues'] = [i for i in item_issues if i['id'] != iss['id']]
+                                    if is_user_admin(current_user_id):
+                                        if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", use_container_width=True):
+                                                                        item['issues'] = [i for i in item_issues if i['id'] != iss['id']]
                                         save_data(st.session_state['app_data'])
                                         if st.session_state.get('last_save_status') != "fail":
                                             st.success("이슈가 삭제되었습니다.")
