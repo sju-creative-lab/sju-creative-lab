@@ -1643,9 +1643,17 @@ def show_main_page():
             margin-bottom: 20px !important;
         }
 
-        /* 2. 동그라미 아이콘 완벽 제거 (구조 기반 선택으로 호환성 강화) */
-        div[data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
+        /* 2. 동그라미 아이콘 완벽 제거 (텍스트 숨김 방지 적용) */
+        div[data-testid="stRadio"] div[role="radiogroup"] input[type="radio"] {
             display: none !important;
+        }
+        
+        div[data-testid="stRadio"] div[role="radiogroup"] label > div:not(:has(p)) {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
 
         /* 3. 라벨 박스 초기화 (파란색 배경 박스 생기는 현상 원천 차단) */
