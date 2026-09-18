@@ -1643,19 +1643,13 @@ def show_main_page():
             margin-bottom: 20px !important;
         }
 
-        /* 2. 동그라미 아이콘 완벽 제거 */
-        div[data-testid="stRadio"] .st-emotion-cache-he5m1v,
-        div[data-testid="stRadio"] .eqiohyi4,
-        div[data-testid="stRadio"] .eqiohyi5,
-        div[data-testid="stRadio"] input[type="radio"] + div,
-        div[data-testid="stRadio"] div[data-baseweb="radio"] {
+        /* 2. 동그라미 아이콘 완벽 제거 (구조 기반 선택) */
+        div[data-testid="stRadio"] div[role="radiogroup"] label > div:first-child {
             display: none !important;
             width: 0 !important;
             height: 0 !important;
-            opacity: 0 !important;
             margin: 0 !important;
             padding: 0 !important;
-            visibility: hidden !important;
         }
 
         /* 3. 라벨 박스 초기화 (파란색 배경 박스 생기는 현상 원천 차단) */
