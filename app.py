@@ -303,7 +303,7 @@ if 'app_data' not in st.session_state:
         )
         
         st.write("<br>"*5, unsafe_allow_html=True)
-        c1, c2, c3 = st.columns()
+        c1, c2, c3 = st.columns(3)
         with c2:
             safe_show_logo(use_container_width=True)
         st.markdown(splash_html, unsafe_allow_html=True)
@@ -956,12 +956,12 @@ else:
 # 3. 로그인 및 회원가입 화면
 # ==========================================
 def show_login_page():
-    col1, col2, col3 = st.columns()
+    col1, col2, col3 = st.columns(3)
     with col2:
         with st.container(border=True):
             st.markdown("<div class='login-hero-inner'>", unsafe_allow_html=True)
 
-            _, logo_col, _ = st.columns()
+            _, logo_col, _ = st.columns(3)
             with logo_col:
                 safe_show_logo(width=200)
 
@@ -1140,7 +1140,7 @@ def show_survey_page():
         
     st.write("<br><br>", unsafe_allow_html=True)
     
-    _, bottom_logo_col, _ = st.columns()
+    _, bottom_logo_col, _ = st.columns(3)
     with bottom_logo_col:
         safe_show_logo(use_container_width=True)
 
@@ -1180,7 +1180,7 @@ def render_pagination(total_items, page_state_key, key_prefix):
         current_page = total_pages
         st.session_state[page_state_key] = current_page
 
-    p1, p2, p3, p4, p5 = st.columns()
+    p1, p2, p3, p4, p5 = st.columns(5)
     with p1:
         if st.button("« 처음", key=f"{key_prefix}_first", use_container_width=True, disabled=(current_page <= 1)):
             st.session_state[page_state_key] = 1
@@ -1352,7 +1352,7 @@ def show_main_page():
         st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
-        r1, r2, r3, r4 = st.columns()
+        r1, r2, r3, r4 = st.columns(4)
         with r1:
             if st.button("로그아웃", use_container_width=True):
                 keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
@@ -1459,7 +1459,7 @@ def show_main_page():
             st.markdown(f"<div class='metric-card'><div class='label'>프로젝트 담당자</div><div class='value'>{unique_authors}</div><div class='sub'>참여 개발자 수</div></div>", unsafe_allow_html=True)
 
         st.write("<br>", unsafe_allow_html=True)
-        chart_col1, chart_col2 = st.columns()
+        chart_col1, chart_col2 = st.columns(2)
         with chart_col1:
             with st.container(border=True):
                 st.markdown("##### 프로젝트 활동 현황")
@@ -1618,7 +1618,7 @@ def show_main_page():
             active_filters.append(f"검색어: '{st.session_state[_kw_key]}'")
         filter_desc = f" ({' / '.join(active_filters)} 적용 중)" if active_filters else ""
 
-        h1, h2 = st.columns()
+        h1, h2 = st.columns(2)
         with h1:
             st.markdown(f"#### 실험실 업로드 목록{filter_desc}")
         with h2:
@@ -1634,7 +1634,7 @@ def show_main_page():
                 with st.container(border=True):
                     st.markdown("<div class='repo-card-inner'>", unsafe_allow_html=True)
 
-                    top_col, action_col = st.columns()
+                    top_col, action_col = st.columns(2)
                     with top_col:
                         is_done = bool(item.get('completed_at'))
                         status_html = "<span class='proj-status-done'>완료</span>" if is_done else "<span class='proj-status-progress'>진행중</span>"
@@ -1889,7 +1889,7 @@ def show_main_page():
             for uid in pending_users:
                 uinfo = users_db[uid]
                 with st.container(border=True):
-                    c1, c2 = st.columns()
+                    c1, c2 = st.columns(2)
                     with c1:
                         st.markdown(f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')})")
                     with c2:
@@ -1910,7 +1910,7 @@ def show_main_page():
                 uinfo = users_db[uid]
                 current_role = uinfo.get("role", "user")
                 with st.container(border=True):
-                    rc1, rc2, rc3 = st.columns()
+                    rc1, rc2, rc3 = st.columns(3)
                     with rc1:
                         role_badge_class = "role-badge-admin" if current_role == "admin" else "role-badge-user"
                         role_label = "관리자" if current_role == "admin" else "일반 사용자"
@@ -2017,7 +2017,7 @@ def show_main_page():
 # ==========================================
 def show_sidebar():
     with st.sidebar:
-        col_side1, col_side2, col_side3 = st.columns()
+        col_side1, col_side2, col_side3 = st.columns(3)
         with col_side2:
             safe_show_logo(use_container_width=True)
         st.markdown("<h3 style='text-align:center;'>AI 교육혁신처 실험실 포털</h3>", unsafe_allow_html=True)
