@@ -139,7 +139,7 @@ def load_data():
         st.session_state['gsheets_debug_log'].append((level, msg))
 
     try:
-        res = requests.get(GAS_URL, params={"action": "read_all", "secret_key": SECRET_KEY}, timeout=12)
+        res = requests.get(GAS_URL, params={"action": "read_all", "secret_key": SECRET_KEY}, timeout=30)
         if res.status_code == 200:
             result = res.json()
             if result.get("success"):
