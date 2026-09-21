@@ -11,22 +11,21 @@ import traceback
 import math
 import time
 import requests
+import io
 import streamlit.components.v1 as components
 
-# 구글 드라이브 연동용 라이브러리 추가
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-import io
-
 # ==========================================
-# 0. 공통 설정
+# 0. 공통 설정 & GAS 연동 정보
 # ==========================================
 LOGO_IMAGE = "sj_signature04.png"
 DATA_FILE = "app_data.pkl"
 AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
 PAGE_SIZE = 10
+
+# 기존에 배포된 구글 웹 앱 URL 및 인증 키 (GCP 쿼터 제한 없이 무제한 호출 가능)
+GAS_URL = "https://script.google.com/macros/s/AKfycbxXXElTYATgiI3gGTP7AdD8Bg5QkuEwBA39HlMrUoXQSppLGBHu0Vf2O1qLkxmeHaa-/exec"
+SECRET_KEY = "sju_secret_2026"
 
 st.set_page_config(page_title="AI 교육혁신처 실험실 포털", layout="wide", initial_sidebar_state="expanded")
 
@@ -59,24 +58,22 @@ def safe_show_logo(width=None, use_container_width=False):
             unsafe_allow_html=True
         )
 
+
 # ------------------------------------------
-# 구글 드라이브 우회 업로드 함수 (GAS 연동)
+# 구글 드라이브 파일 업로드 함수 (GAS 연동)
 # ------------------------------------------
 def upload_to_gdrive_and_get_link(uploaded_file):
-    GAS_URL = "https://script.google.com/macros/s/AKfycbzhUPJU9D3A6FH9r5RPOlydHp4PjRqSw8sWfD-PZYMUfFqUewFLFdboW0JnPiOU6bA2UQ/exec"
-    
     file_bytes = uploaded_file.getvalue()
     file_b64 = base64.b64encode(file_bytes).decode('utf-8')
     
     payload = {
-        "secret_key": "sju_secret_2026",
+        "secret_key": SECRET_KEY,
         "file_name": uploaded_file.name,
         "mime_type": uploaded_file.type if uploaded_file.type else "application/octet-stream",
         "file_b64": file_b64
     }
     
-    response = requests.post(GAS_URL, json=payload)
-    
+    response = requests.post(GAS_URL, json=payload, timeout=30)
     if response.status_code == 200:
         result = response.json()
         if result.get("success"):
@@ -84,8 +81,9 @@ def upload_to_gdrive_and_get_link(uploaded_file):
         else:
             raise Exception(f"업로드 에러: {result.get('error')}")
     else:
-        raise Exception("서버 통신 실패 (URL을 확인해주세요)")
-        
+        raise Exception(f"서버 통신 실패 (상태 코드: {response.status_code})")
+
+
 # ------------------------------------------
 # 구글 드라이브 파일 삭제 함수 (휴지통 이동)
 # ------------------------------------------
@@ -94,21 +92,19 @@ def delete_from_gdrive(file_url):
         return
         
     file_id = file_url.split("id=")[-1]
-    GAS_URL = "https://script.google.com/macros/s/AKfycbzhUPJU9D3A6FH9r5RPOlydHp4PjRqSw8sWfD-PZYMUfFqUewFLFdboW0JnPiOU6bA2UQ/exec"
-    
     payload = {
-        "secret_key": "sju_secret_2026",
+        "secret_key": SECRET_KEY,
         "action": "delete",
         "file_id": file_id
     }
-    
     try:
-        requests.post(GAS_URL, json=payload)
+        requests.post(GAS_URL, json=payload, timeout=10)
     except Exception as e:
         print(f"드라이브 파일 삭제 실패: {e}")
 
+
 # ==========================================
-# 1. DB 연동 (구글 시트 & 로컬 하이브리드)
+# 1. DB 연동 (GAS 웹앱 ↔ 구글 스프레드시트 ↔ 로컬 하이브리드)
 # ==========================================
 def load_data():
     local_data = {
@@ -118,7 +114,8 @@ def load_data():
         "repository": [],
         "categories": ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"],
         "deleted_ids": [],
-        "survey": []
+        "survey": [],
+        "timeline_log": []
     }
 
     if os.path.exists(DATA_FILE):
@@ -134,376 +131,150 @@ def load_data():
     if 'survey' not in local_data or local_data['survey'] is None:
         local_data['survey'] = []
 
-    migrated_users = {}
-    for uid, uval in local_data.get('users_db', {}).items():
-        if uid in deleted_ids_set:
-            continue
-        if isinstance(uval, str):
-            is_admin_account = (uid == "admin")
-            migrated_users[uid] = {
-                "password": uval,
-                "dept": "시스템관리자" if is_admin_account else "",
-                "manager": "관리자" if is_admin_account else "",
-                "approved": True,
-                "role": "admin" if is_admin_account else "user",
-                "survey_completed": True if is_admin_account else False
-            }
-        elif isinstance(uval, dict):
-            uval.setdefault("dept", "")
-            uval.setdefault("manager", "")
-            uval["approved"] = True
-            uval.setdefault("role", "admin" if uid == "admin" else "user")
-            uval.setdefault("survey_completed", True if uid == "admin" else False)
-            if uid == "admin":
-                uval["role"] = "admin"
-                uval["survey_completed"] = True
-            migrated_users[uid] = uval
-    if "admin" not in migrated_users:
-        migrated_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
-    local_data['users_db'] = migrated_users
-
-    for item in local_data.get('repository', []):
-        if 'issues' not in item or item['issues'] is None:
-            item['issues'] = []
-        item.setdefault('completed_at', None)
-
-    if 'timeline_log' not in local_data or local_data['timeline_log'] is None:
-        local_data['timeline_log'] = []
-
-    local_users_before_merge = dict(local_data['users_db'])
-    local_repo_before_merge = list(local_data['repository'])
-    local_categories_before_merge = list(local_data.get('categories', []))
-
-    st.session_state['db_mode'] = "Local File"
+    st.session_state['db_mode'] = "GAS Google Sheets"
     st.session_state['gsheets_debug_log'] = []
     st.session_state['gsheets_full_traceback'] = []
 
     def _log(msg, level="info"):
         st.session_state['gsheets_debug_log'].append((level, msg))
 
-    def _fmt_err(e, tag):
-        full_tb = traceback.format_exc()
-        st.session_state['gsheets_full_traceback'].append((tag, full_tb))
-        return f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음, 아래 전체 traceback 확인)'}"
-
+    # 1회 HTTP GET 요청으로 구글 시트 전체 데이터를 가져와 API 할당량 소모를 0으로 유지
     try:
-        from streamlit_gsheets import GSheetsConnection
-        _log("streamlit_gsheets 패키지 import 성공")
-
-        if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-            _log("st.secrets에 [connections.gsheets] 설정 발견 → Google Sheets 모드로 전환 시도")
-            st.session_state['db_mode'] = "Google Sheets"
-            try:
-                conn = st.connection("gsheets", type=GSheetsConnection)
-                _log("st.connection 객체 생성 성공")
-            except Exception as e_conn:
-                _log(f"[오류] st.connection 생성 자체가 실패했습니다: {_fmt_err(e_conn, 'connection_create')}", "error")
-                conn = None
-
-            if conn is not None:
-                try:
-                    users_df = conn.read(worksheet="Users", ttl=0)
-                    _log(f"Users 시트 읽기 성공: {len(users_df)}행, 컬럼={list(users_df.columns)}")
-                    required_cols = {'ID', 'Password'}
-                    if not users_df.empty and required_cols.issubset(set(users_df.columns)):
-                        users_df = users_df.dropna(subset=['ID'])
-                        merged_users = {}
-                        for _, row in users_df.iterrows():
-                            uid = str(row['ID'])
-                            if uid in deleted_ids_set:
-                                continue
-                            pw = str(row['Password'])
-                            dept = str(row['Dept']) if 'Dept' in users_df.columns and pd.notna(row.get('Dept')) else ""
-                            manager = str(row['Manager']) if 'Manager' in users_df.columns and pd.notna(row.get('Manager')) else ""
-                            role_raw = str(row.get('Role')).strip().lower() if 'Role' in users_df.columns and pd.notna(row.get('Role')) else "user"
-                            role = "admin" if role_raw == "admin" else "user"
-                            approved = True
+        res = requests.get(GAS_URL, params={"action": "read_all", "secret_key": SECRET_KEY}, timeout=12)
+        if res.status_code == 200:
+            result = res.json()
+            if result.get("success"):
+                _log("GAS 웹 앱을 통한 구글 시트 전체 동기화 성공")
+                
+                # 1. Users 동기화
+                users_list = result.get("users", [])
+                if users_list:
+                    merged_users = {}
+                    for row in users_list:
+                        uid = str(row.get("ID", "")).strip()
+                        if not uid or uid in deleted_ids_set:
+                            continue
+                        pw = str(row.get("Password", ""))
+                        dept = str(row.get("Dept", ""))
+                        manager = str(row.get("Manager", ""))
+                        role_raw = str(row.get("Role", "user")).strip().lower()
+                        role = "admin" if (role_raw == "admin" or uid == "admin") else "user"
+                        raw_sc = row.get("SurveyCompleted", False)
+                        survey_completed = str(raw_sc).strip().upper() in ['TRUE', '1', 'T', 'Y', 'YES'] if isinstance(raw_sc, str) else bool(raw_sc)
+                        
+                        if uid == "admin":
+                            survey_completed = True
                             
-                            if 'SurveyCompleted' in users_df.columns:
-                                raw_sc = row['SurveyCompleted']
-                                if pd.isna(raw_sc):
-                                    survey_completed = False
-                                elif isinstance(raw_sc, str):
-                                    survey_completed = str(raw_sc).strip().upper() in ['TRUE', '1', 'T', 'Y', 'YES']
-                                else:
-                                    survey_completed = bool(raw_sc)
-                            else:
-                                survey_completed = False
-                            
-                            if uid == "admin":
-                                role = "admin"
-                                survey_completed = True
-                                
-                            merged_users[uid] = {"password": pw, "dept": dept, "manager": manager, "approved": approved, "role": role, "survey_completed": survey_completed}
+                        merged_users[uid] = {
+                            "password": pw, "dept": dept, "manager": manager,
+                            "approved": True, "role": role, "survey_completed": survey_completed
+                        }
 
-                        for uid, uinfo in local_users_before_merge.items():
-                            if uid in deleted_ids_set:
-                                continue
-                            if uid not in merged_users:
-                                merged_users[uid] = uinfo
-                            else:
-                                merged_users[uid]["approved"] = True
-                                if uinfo.get("role") == "admin":
-                                    merged_users[uid]["role"] = "admin"
+                    for uid, uinfo in local_data['users_db'].items():
+                        if uid not in deleted_ids_set and uid not in merged_users:
+                            merged_users[uid] = uinfo
 
-                        for uid in list(merged_users.keys()):
-                            if uid in deleted_ids_set:
-                                del merged_users[uid]
-                        if "admin" not in merged_users:
-                            merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
-                        else:
-                            merged_users["admin"]["approved"] = True
-                            merged_users["admin"]["role"] = "admin"
-                            merged_users["admin"]["survey_completed"] = True
-                        local_data['users_db'] = merged_users
-                        _log(f"Users 병합 완료: 총 {len(merged_users)}건 (승인 절차 폐지로 전원 승인 처리)")
-                    else:
-                        _log("[안내] Users 시트가 비어있거나 'ID'/'Password' 헤더가 없습니다. 로컬 기본값을 사용합니다.")
-                except Exception as e_users:
-                    _log(f"[오류] Users 시트 읽기 실패: {_fmt_err(e_users, 'users_read')}", "error")
+                    if "admin" not in merged_users:
+                        merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
+                    local_data['users_db'] = merged_users
 
-                try:
-                    repo_df = conn.read(worksheet="Repository", ttl=0)
-                    _log(f"Repository 시트 읽기 성공: {len(repo_df)}행, 컬럼={list(repo_df.columns)}")
+                # 2. Repository 동기화
+                repo_list = result.get("repository", [])
+                if repo_list:
+                    parsed_repo = []
+                    for s_item in repo_list:
+                        if not s_item.get("id"):
+                            continue
+                        for col in ['feedbacks', 'issues', 'files']:
+                            val = s_item.get(col, [])
+                            if isinstance(val, str) and val.strip():
+                                try:
+                                    s_item[col] = ast.literal_eval(val)
+                                except Exception:
+                                    s_item[col] = []
+                            elif not isinstance(val, list):
+                                s_item[col] = []
+                        if str(s_item.get('completed_at')) in ('', 'None', 'nan'):
+                            s_item['completed_at'] = None
+                        parsed_repo.append(s_item)
+                    local_data['repository'] = parsed_repo
 
-                    if not repo_df.empty and 'id' in repo_df.columns:
-                        repo_df = repo_df.dropna(subset=['id'])
-                        sheet_repo = repo_df.to_dict('records')
+                # 3. Categories 동기화
+                cat_list = result.get("categories", [])
+                if cat_list:
+                    extracted = [str(c.get("category", "")).strip() for c in cat_list if c.get("category")]
+                    if "전체" not in extracted:
+                        extracted.insert(0, "전체")
+                    local_data['categories'] = extracted
 
-                        final_repo = []
-                        for s_item in sheet_repo:
-                            s_id_str = str(s_item['id']).strip()
-                            if s_id_str.endswith(".0"):
-                                s_id_str = s_id_str[:-2]
-                            
-                            try:
-                                if pd.isna(s_item.get('feedbacks')):
-                                    s_item['feedbacks'] = []
-                                else:
-                                    s_item['feedbacks'] = ast.literal_eval(str(s_item['feedbacks']))
-                            except Exception:
-                                s_item['feedbacks'] = []
+                # 4. Survey 동기화
+                survey_list = result.get("survey", [])
+                if survey_list:
+                    local_data['survey'] = survey_list
 
-                            try:
-                                if pd.isna(s_item.get('issues')):
-                                    s_item['issues'] = []
-                                else:
-                                    s_item['issues'] = ast.literal_eval(str(s_item['issues']))
-                            except Exception:
-                                s_item['issues'] = []
-                                
-                            try:
-                                if pd.isna(s_item.get('files')):
-                                    s_item['files'] = []
-                                else:
-                                    s_item['files'] = ast.literal_eval(str(s_item['files']))
-                            except Exception:
-                                s_item['files'] = []
-
-                            if pd.isna(s_item.get('completed_at')) or str(s_item.get('completed_at')) in ('', 'None', 'nan'):
-                                s_item['completed_at'] = None
-
-                            def clean_loc_id(loc_id):
-                                lid = str(loc_id).strip()
-                                return lid[:-2] if lid.endswith(".0") else lid
-                                
-                            matching_local = next((l for l in local_repo_before_merge if clean_loc_id(l['id']) == s_id_str), None)
-                            
-                            if matching_local and 'file_data' in matching_local:
-                                s_item['file_data'] = matching_local['file_data']
-                            else:
-                                s_item['file_data'] = b''
-
-                            final_repo.append(s_item)
-
-                        local_data['repository'] = final_repo
-                        _log(f"Repository 로드 완료(시트 기준): 총 {len(final_repo)}건")
-                    else:
-                        local_data['repository'] = []
-                except Exception as e_repo:
-                    _log(f"[오류] Repository 시트 읽기 실패: {_fmt_err(e_repo, 'repo_read')}", "error")
-
-                try:
-                    cat_df = conn.read(worksheet="Categories", ttl=0)
-                    if not cat_df.empty and 'category' in cat_df.columns:
-                        cat_list = cat_df['category'].dropna().astype(str).tolist()
-                        if "전체" not in cat_list:
-                            cat_list.insert(0, "전체")
-                        local_data['categories'] = cat_list
-                    else:
-                        local_data['categories'] = local_categories_before_merge
-                except Exception as e_cat:
-                    local_data['categories'] = local_categories_before_merge
-                    
-                try:
-                    survey_df = conn.read(worksheet="survey", ttl=0)
-                    if not survey_df.empty:
-                        local_data['survey'] = survey_df.to_dict('records')
-                    else:
-                        local_data['survey'] = []
-                except Exception as e_sv:
-                    local_data['survey'] = local_data.get('survey', [])
-                    _log(f"[안내] survey 시트를 찾을 수 없습니다: {_fmt_err(e_sv, 'survey_read')}", "warn")
-
-                try:
-                    timeline_df = conn.read(worksheet="TimelineLog", ttl=0)
-                    if not timeline_df.empty:
-                        local_data['timeline_log'] = timeline_df.to_dict('records')
-                except Exception as e_tl:
-                    pass
+                # 5. TimelineLog 동기화
+                tl_list = result.get("timeline_log", [])
+                if tl_list:
+                    local_data['timeline_log'] = tl_list
+            else:
+                _log(f"GAS 응답 오류: {result.get('error')}", "warn")
         else:
-            _log("st.secrets에 [connections.gsheets] 설정이 없습니다 → Local File 모드로 동작합니다.")
+            _log(f"GAS 서버 응답 실패 (HTTP {res.status_code}) -> 로컬 캐시로 동작합니다.", "warn")
     except Exception as e:
-        _log(f"[오류] Google Sheets 연동 초기화 자체가 실패했습니다: {_fmt_err(e, 'init')}", "error")
+        _log(f"시트 동기화 실패 (로컬 데이터 유지): {e}", "warn")
 
     return local_data
 
 
 def save_data(data):
+    # 1. 로컬 캐시 즉시 저장
     with open(DATA_FILE, "wb") as f:
         pickle.dump(data, f)
 
-    if st.session_state.get('db_mode') == "Google Sheets":
-        core_save_failed = False
-        try:
-            from streamlit_gsheets import GSheetsConnection
-            conn = st.connection("gsheets", type=GSheetsConnection)
+    # 2. GAS 웹 앱을 통한 스프레드시트 일괄 업데이트
+    try:
+        users_rows = []
+        for uid, uinfo in data.get('users_db', {}).items():
+            users_rows.append({
+                "ID": uid,
+                "Password": uinfo.get("password", ""),
+                "Dept": uinfo.get("dept", ""),
+                "Manager": uinfo.get("manager", ""),
+                "Approved": bool(uinfo.get("approved", True)),
+                "Role": uinfo.get("role", "user"),
+                "SurveyCompleted": bool(uinfo.get("survey_completed", False))
+            })
 
-            deleted_ids_set = set(data.get('deleted_ids', []))
+        repo_rows = []
+        for r in data.get('repository', []):
+            item_copy = dict(r)
+            item_copy.pop('file_data', None)
+            item_copy['feedbacks'] = str(item_copy.get('feedbacks', []))
+            item_copy['issues'] = str(item_copy.get('issues', []))
+            item_copy['files'] = str(item_copy.get('files', []))
+            repo_rows.append(item_copy)
 
-            try:
-                latest_users_df = conn.read(worksheet="Users", ttl=0)
-            except Exception:
-                latest_users_df = pd.DataFrame(columns=["ID", "Password", "Dept", "Manager", "Approved", "Role", "SurveyCompleted"])
+        cat_rows = [{"category": c} for c in data.get('categories', [])]
 
-            latest_users = {}
-            if not latest_users_df.empty and {'ID', 'Password'}.issubset(set(latest_users_df.columns)):
-                for _, row in latest_users_df.dropna(subset=['ID']).iterrows():
-                    uid = str(row['ID'])
-                    if uid in deleted_ids_set:
-                        continue
-                    role_raw = str(row.get('Role')).strip().lower() if 'Role' in latest_users_df.columns and pd.notna(row.get('Role')) else "user"
-                    
-                    if 'SurveyCompleted' in latest_users_df.columns:
-                        raw_sc = row['SurveyCompleted']
-                        if pd.isna(raw_sc):
-                            sc_val = False
-                        elif isinstance(raw_sc, str):
-                            sc_val = str(raw_sc).strip().upper() in ['TRUE', '1', 'T', 'Y', 'YES']
-                        else:
-                            sc_val = bool(raw_sc)
-                    else:
-                        sc_val = False
+        payload = {
+            "secret_key": SECRET_KEY,
+            "action": "save_all",
+            "users": users_rows,
+            "repository": repo_rows,
+            "categories": cat_rows,
+            "survey": data.get('survey', []),
+            "timeline_log": data.get('timeline_log', [])
+        }
 
-                    latest_users[uid] = {
-                        "password": str(row['Password']),
-                        "dept": str(row['Dept']) if 'Dept' in latest_users_df.columns and pd.notna(row.get('Dept')) else "",
-                        "manager": str(row['Manager']) if 'Manager' in latest_users_df.columns and pd.notna(row.get('Manager')) else "",
-                        "approved": True,
-                        "role": "admin" if (role_raw == "admin" or uid == "admin") else "user",
-                        "survey_completed": sc_val
-                    }
-
-            final_users = dict(latest_users)
-            for uid, uinfo in data['users_db'].items():
-                if uid in deleted_ids_set:
-                    continue
-                final_users[uid] = uinfo
-            for uid in list(final_users.keys()):
-                if uid in deleted_ids_set:
-                    del final_users[uid]
-            if "admin" not in final_users:
-                final_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
-            else:
-                final_users["admin"]["role"] = "admin"
-                final_users["admin"]["approved"] = True
-                final_users["admin"]["survey_completed"] = True
-
-            data['users_db'] = final_users
-
-            users_rows = []
-            for uid, uinfo in final_users.items():
-                users_rows.append({
-                    "ID": uid,
-                    "Password": uinfo.get("password", ""),
-                    "Dept": uinfo.get("dept", ""),
-                    "Manager": uinfo.get("manager", ""),
-                    "Approved": bool(uinfo.get("approved", True)),
-                    "Role": uinfo.get("role", "user"),
-                    "SurveyCompleted": bool(uinfo.get("survey_completed", False))
-                })
-            users_df = pd.DataFrame(users_rows, columns=["ID", "Password", "Dept", "Manager", "Approved", "Role", "SurveyCompleted"])
-
-            try:
-                conn.update(worksheet="Users", data=users_df)
-            except Exception as e_u:
-                core_save_failed = True
-                raise e_u
-
-            if data['repository']:
-                repo_df = pd.DataFrame(data['repository'])
-                if 'file_data' in repo_df.columns:
-                    repo_df = repo_df.drop(columns=['file_data'])
-                repo_df['feedbacks'] = repo_df['feedbacks'].apply(lambda x: str(x))
-                if 'issues' in repo_df.columns:
-                    repo_df['issues'] = repo_df['issues'].apply(lambda x: str(x))
-                if 'files' in repo_df.columns:
-                    repo_df['files'] = repo_df['files'].apply(lambda x: str(x))
-                if 'completed_at' not in repo_df.columns:
-                    repo_df['completed_at'] = None
-                try:
-                    conn.update(worksheet="Repository", data=repo_df)
-                except Exception as e_r:
-                    core_save_failed = True
-                    raise e_r
-            else:
-                empty_df = pd.DataFrame(columns=['id', 'title', 'category', 'desc', 'author', 'date', 'filename', 'files', 'feedbacks', 'issues', 'completed_at'])
-                try:
-                    conn.update(worksheet="Repository", data=empty_df)
-                except Exception as e_r2:
-                    core_save_failed = True
-                    raise e_r2
-
-            cat_list = data.get('categories', [])
-            cat_df = pd.DataFrame({"category": cat_list})
-            try:
-                conn.update(worksheet="Categories", data=cat_df)
-            except Exception as e_c:
-                core_save_failed = True
-                raise e_c
-
-            try:
-                if data.get('survey'):
-                    survey_df = pd.DataFrame(data['survey'])
-                else:
-                    survey_df = pd.DataFrame(columns=['부서명', '담당자 성명', '업무명', '관리 매체', '주 사용자', '업무주기', '1회 소요시간', '연계 부서', '개선 필요사항', '제출일', 'User_ID'])
-                conn.update(worksheet="survey", data=survey_df)
-            except Exception as e_sv:
-                core_save_failed = True
-                raise e_sv
-
-            try:
-                if data.get('timeline_log'):
-                    timeline_df = pd.DataFrame(data['timeline_log'])
-                else:
-                    timeline_df = pd.DataFrame(columns=['id', 'title', 'category', 'author', 'started_at', 'completed_at', 'duration_hours'])
-                conn.update(worksheet="TimelineLog", data=timeline_df)
-            except Exception as e_tl:
-                pass
-
+        res = requests.post(GAS_URL, json=payload, timeout=20)
+        if res.status_code == 200 and res.json().get("success"):
             st.session_state['last_save_status'] = "success"
-        except Exception as e:
-            full_tb = traceback.format_exc()
-            st.session_state.setdefault('gsheets_full_traceback', []).append(("save_data", full_tb))
-            err_txt = f"[{type(e).__name__}] {str(e) if str(e) else '(메시지 없음)'}"
-            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"[오류] save_data 중 Google Sheets 쓰기 실패: {err_txt}"))
-            if core_save_failed:
-                st.session_state['last_save_status'] = "fail"
-                st.error(f"[경고] 저장에 실패했습니다! 변경사항이 시트에 반영되지 않았을 수 정있습니다. 오류: {err_txt}")
-            else:
-                st.session_state['last_save_status'] = "success"
-    else:
-        st.session_state['last_save_status'] = "local_only"
+        else:
+            st.session_state['last_save_status'] = "fail"
+            st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"시트 저장 실패: {res.text}"))
+    except Exception as e:
+        st.session_state['last_save_status'] = "fail"
+        st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"GAS 통신 실패: {e}"))
 
 
 # ==========================================
@@ -542,7 +313,7 @@ if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
     splash_placeholder.empty()
 
-# 새로고침 방지를 위한 세션 초기화 로직 (URL Query Parameters 활용)
+# 새로고침 방지를 위한 세션 초기화 로직
 if 'logged_in' not in st.session_state:
     if "uid" in st.query_params and st.query_params["uid"] in st.session_state.get('app_data', {}).get('users_db', {}):
         st.session_state['logged_in'] = True
@@ -682,9 +453,6 @@ def inject_timer_js():
     """, height=0)
 
 
-# ==========================================
-# 2-1. 디자인 토큰 & 전역 스타일
-# ==========================================
 def inject_design_system():
     st.markdown("""
     <style>
@@ -1017,7 +785,6 @@ def inject_design_system():
         border: 1px solid rgba(0,82,255,0.2); white-space: nowrap;
     }
     
-    /* Spinner 텍스트 줄바꿈 방지 */
     div[data-testid="stSpinner"] p {
         white-space: nowrap !important;
     }
@@ -1107,11 +874,10 @@ else:
             _render_abnormal_access_body()
 
 # ==========================================
-# 3-2. 파일 미리보기 모달 팝업 (코드 & HTML)
+# 3-2. 파일 미리보기 모달 팝업
 # ==========================================
 def _render_preview_body(filename, file_url, legacy_data):
     import re
-    
     file_ext = filename.split('.')[-1].lower() if filename else ''
     content = None
     
@@ -1121,7 +887,7 @@ def _render_preview_body(filename, file_url, legacy_data):
         with st.spinner("파일을 실시간으로 불러오는 중입니다..."):
             try:
                 session = requests.Session()
-                r = session.get(file_url)
+                r = session.get(file_url, timeout=15)
                 
                 if "Virus scan warning" in r.text or 'id="download-form"' in r.text:
                     action_match = re.search(r'id="download-form"\s+action="([^"]+)"', r.text)
@@ -1142,9 +908,9 @@ def _render_preview_body(filename, file_url, legacy_data):
                         if uuid_match:
                             params["uuid"] = uuid_match.group(1)
                             
-                        r = session.get(download_url, params=params, cookies=r.cookies)
+                        r = session.get(download_url, params=params, cookies=r.cookies, timeout=15)
                     else:
-                        r = session.get(file_url + "&confirm=t", cookies=r.cookies)
+                        r = session.get(file_url + "&confirm=t", cookies=r.cookies, timeout=15)
 
                 if r.status_code == 200:
                     content = r.content
@@ -1191,12 +957,12 @@ else:
 # 3. 로그인 및 회원가입 화면
 # ==========================================
 def show_login_page():
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2, col3 = st.columns()
     with col2:
         with st.container(border=True):
             st.markdown("<div class='login-hero-inner'>", unsafe_allow_html=True)
 
-            _, logo_col, _ = st.columns([1, 1.2, 1])
+            _, logo_col, _ = st.columns()
             with logo_col:
                 safe_show_logo(width=200)
 
@@ -1270,7 +1036,7 @@ def show_login_page():
 
 
 # ==========================================
-# 3-1. 부서별 자동화 현황조사 팝업 및 폼 화면
+# 3-1. 부서별 자동화 현황조사
 # ==========================================
 def _render_survey_success_body():
     st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
@@ -1381,7 +1147,7 @@ def show_survey_page():
 
 
 # ==========================================
-# 4. 사이드바 필터가 반영된 저장소 데이터 조회 함수
+# 4. 저장소 데이터 조회 및 컴포넌트
 # ==========================================
 def get_filtered_repo():
     repo_data = st.session_state['app_data']['repository']
@@ -1415,7 +1181,7 @@ def render_pagination(total_items, page_state_key, key_prefix):
         current_page = total_pages
         st.session_state[page_state_key] = current_page
 
-    p1, p2, p3, p4, p5 = st.columns([1, 1, 2, 1, 1])
+    p1, p2, p3, p4, p5 = st.columns()
     with p1:
         if st.button("« 처음", key=f"{key_prefix}_first", use_container_width=True, disabled=(current_page <= 1)):
             st.session_state[page_state_key] = 1
@@ -1580,7 +1346,6 @@ def show_main_page():
         st.rerun()
 
     col_title, col_ui = st.columns([5, 5])
-
     display_name = get_display_name(current_user_id)
 
     with col_title:
@@ -1588,7 +1353,7 @@ def show_main_page():
         st.caption(f"환영합니다, **{display_name}**님")
 
     with col_ui:
-        r1, r2, r3, r4 = st.columns([1, 1, 1, 1.5])
+        r1, r2, r3, r4 = st.columns()
         with r1:
             if st.button("로그아웃", use_container_width=True):
                 keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
@@ -1621,73 +1386,59 @@ def show_main_page():
     done_issues = len([i for i in all_issues if i.get('status') == '완료'])
 
     total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
-
     is_admin = is_user_admin(current_user_id)
-
     menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
     
     st.markdown("""
         <style>
-/* ==========================================
-       Toss 스타일 탭 메뉴 (사용자 식별 클래스 반영)
-       ========================================== */
-    /* 1. 라디오 그룹 전체 레이아웃 */
-    div[data-testid="stRadio"] {
-        width: 100% !important;
-        background: transparent !important;
-    }
-    div[data-testid="stRadio"] > div[role="radiogroup"] {
-        background-color: transparent !important;
-        border: none !important;
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 28px !important; 
-        padding: 0 !important;
-        margin-bottom: 24px !important;
-    }
-
-    /* 2. 동그라미 아이콘 완벽 제거 (직접 찾으신 클래스 타겟팅) */
-    div[data-testid="stRadio"] .st-emotion-cache-he5m1v {
-        display: none !important;
-    }
-    div[data-testid="stRadio"] input[type="radio"] {
-        display: none !important;
-    }
-
-    /* 3. 텍스트 기본(비활성) 스타일 */
-    div[data-testid="stRadio"] label {
-        cursor: pointer !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        background: transparent !important;
-        align-items: center !important;
-        gap: 0 !important;
-    }
-    div[data-testid="stRadio"] label p {
-        font-size: 16px !important;
-        font-weight: 600 !important;
-        color: #8C9BB0 !important; 
-        margin: 0 !important;
-        padding: 4px 4px 8px 4px !important; 
-        border-bottom: 3px solid transparent !important; 
-        white-space: nowrap !important;
-        transition: color 0.2s ease !important;
-    }
-
-    /* 4. 마우스 호버 시 텍스트 색상 변화 */
-    div[data-testid="stRadio"] label:hover p {
-        color: #0052FF !important;
-    }
-
-    /* 5. 활성화(선택된) 탭 스타일 */
-    div[data-testid="stRadio"] label[data-checked="true"] p,
-    div[data-testid="stRadio"] label[aria-checked="true"] p,
-    div[data-testid="stRadio"] label:has(input:checked) p {
-        color: #0052FF !important; 
-        font-weight: 800 !important;
-        border-bottom: 3px solid #0052FF !important; 
-    }
+        div[data-testid="stRadio"] {
+            width: 100% !important;
+            background: transparent !important;
+        }
+        div[data-testid="stRadio"] > div[role="radiogroup"] {
+            background-color: transparent !important;
+            border: none !important;
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 28px !important; 
+            padding: 0 !important;
+            margin-bottom: 24px !important;
+        }
+        div[data-testid="stRadio"] .st-emotion-cache-he5m1v {
+            display: none !important;
+        }
+        div[data-testid="stRadio"] input[type="radio"] {
+            display: none !important;
+        }
+        div[data-testid="stRadio"] label {
+            cursor: pointer !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: transparent !important;
+            align-items: center !important;
+            gap: 0 !important;
+        }
+        div[data-testid="stRadio"] label p {
+            font-size: 16px !important;
+            font-weight: 600 !important;
+            color: #8C9BB0 !important; 
+            margin: 0 !important;
+            padding: 4px 4px 8px 4px !important; 
+            border-bottom: 3px solid transparent !important; 
+            white-space: nowrap !important;
+            transition: color 0.2s ease !important;
+        }
+        div[data-testid="stRadio"] label:hover p {
+            color: #0052FF !important;
+        }
+        div[data-testid="stRadio"] label[data-checked="true"] p,
+        div[data-testid="stRadio"] label[aria-checked="true"] p,
+        div[data-testid="stRadio"] label:has(input:checked) p {
+            color: #0052FF !important; 
+            font-weight: 800 !important;
+            border-bottom: 3px solid #0052FF !important; 
+        }
         </style>
     """, unsafe_allow_html=True)
     
@@ -1815,8 +1566,6 @@ def show_main_page():
             with st.form("upload_form", clear_on_submit=True):
                 proj_name = st.text_input("프로젝트 명", placeholder="예: 학사행정 챗봇 자동응답 시스템")
                 proj_desc = st.text_area("산출물 설명", placeholder="예: 학생 문의를 자동으로 분류하고 답변하는 AI 챗봇입니다.")
-                
-                # 다중 파일 첨부 허용
                 uploaded_files = st.file_uploader("산출물 파일 첨부 (여러 개 선택 가능)", accept_multiple_files=True)
                 st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML, 파이썬 파일 등은 새 창에서 미리보기가 가능합니다.")
 
@@ -1917,7 +1666,6 @@ def show_main_page():
                         
                     can_manage = (current_user_str == item_author_str or is_user_admin(st.session_state.get('user_id')))
 
-                    # 다중 파일 목록 UI 출력 
                     with action_col:
                         existing_files = item.get("files", [])
                         if item.get("filename") and not existing_files:
@@ -1977,8 +1725,6 @@ def show_main_page():
                             with st.popover("산출물 삭제", use_container_width=True):
                                 st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
                                 if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
-                                    
-                                    # 프로젝트 완전 삭제 시 다중 파일 모두 구글 드라이브에서 삭제
                                     files_to_delete = item.get("files", [])
                                     if not files_to_delete and item.get("file_url"):
                                         files_to_delete = [{"file_url": item["file_url"]}]
@@ -1995,7 +1741,6 @@ def show_main_page():
                                         st.success("삭제되었습니다.")
                                         st.rerun()
 
-                    # 내용 수정 시 기존 첨부파일 삭제 및 새로운 다중 파일 추가 기능 구현
                     if can_manage and st.session_state.get(f"edit_toggle_{item['id']}", False):
                         with st.form(f"edit_form_{item['id']}"):
                             edit_title = st.text_input("프로젝트 명 수정", value=item['title'])
@@ -2015,13 +1760,11 @@ def show_main_page():
                                 st.caption("기존 첨부파일이 없습니다.")
                             
                             new_uploads = st.file_uploader("새 파일 추가 (여러 개 선택 가능)", accept_multiple_files=True, key=f"new_up_{item['id']}")
-                            
                             save_edit_btn = st.form_submit_button("수정 내용 저장", type="primary")
                             
                             if save_edit_btn:
                                 with st.spinner("변경사항을 저장하고 파일을 업데이트 중입니다..."):
                                     updated_files = []
-                                    # 1. 체크된 기존 파일 삭제 처리
                                     for i, f_info in enumerate(existing_files_for_edit):
                                         if del_flags[i]:
                                             if f_info.get('file_url'):
@@ -2029,7 +1772,6 @@ def show_main_page():
                                         else:
                                             updated_files.append(f_info)
                                     
-                                    # 2. 새로운 파일 업로드 처리
                                     for uf in new_uploads:
                                         try:
                                             new_url = upload_to_gdrive_and_get_link(uf)
@@ -2037,7 +1779,6 @@ def show_main_page():
                                         except Exception as e:
                                             st.error(f"'{uf.name}' 업로드 실패: {e}")
                                     
-                                    # 3. 데이터 갱신
                                     item['title'] = edit_title
                                     item['desc'] = edit_desc
                                     item['files'] = updated_files
@@ -2092,9 +1833,9 @@ def show_main_page():
                                         if st.session_state.get('last_save_status') != "fail":
                                             st.rerun()
                             with ic3:
-                                    if is_user_admin(current_user_id):
-                                        if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", use_container_width=True):
-                                                                        item['issues'] = [i for i in item_issues if i['id'] != iss['id']]
+                                if is_user_admin(current_user_id):
+                                    if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", use_container_width=True):
+                                        item['issues'] = [i for i in item_issues if i['id'] != iss['id']]
                                         save_data(st.session_state['app_data'])
                                         if st.session_state.get('last_save_status') != "fail":
                                             st.success("이슈가 삭제되었습니다.")
@@ -2141,7 +1882,7 @@ def show_main_page():
         st.dataframe(users_df, use_container_width=True, hide_index=True)
 
         st.markdown("#### 회원가입 승인 대기 목록")
-        st.caption("현재는 회원가입 시 자동 승인되므로 이 목록은 비어있는 것이 정상입니다. 과거에 미승인 상태로 남아있던 계정이 있을 경우에만 표시됩니다.")
+        st.caption("현재는 회원가입 시 자동 승인되므로 이 목록은 비어있는 것이 정상입니다.")
         pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", True)]
         if not pending_users:
             st.info("승인 대기 중인 계정이 없습니다.")
@@ -2149,7 +1890,7 @@ def show_main_page():
             for uid in pending_users:
                 uinfo = users_db[uid]
                 with st.container(border=True):
-                    c1, c2 = st.columns([3, 1])
+                    c1, c2 = st.columns()
                     with c1:
                         st.markdown(f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')})")
                     with c2:
@@ -2162,8 +1903,6 @@ def show_main_page():
 
         st.markdown("---")
         st.markdown("#### 관리자 권한 부여 / 해제")
-        st.caption("관리자 권한을 부여받은 계정은 모든 산출물을 수정·삭제하고, 다른 사용자를 삭제하며, 부서 목록을 관리할 수 있게 됩니다. 신중하게 부여해 주세요.")
-
         non_root_users = [uid for uid in users_db.keys() if uid != 'admin']
         if not non_root_users:
             st.info("권한을 부여할 다른 계정이 없습니다.")
@@ -2215,7 +1954,6 @@ def show_main_page():
 
         st.markdown("---")
         st.markdown("### 사이드바 [부서] 필터 항목 구성")
-        st.caption("회원가입 시 입력한 부서명은 자동으로 이 목록에 추가됩니다.")
         current_cats = st.session_state['app_data'].get('categories', ["전체", "교무처", "학생처", "총무처", "기획처", "단과대학", "기타"])
         st.write("현재 등록된 부서 목록:", current_cats)
 
@@ -2238,7 +1976,7 @@ def show_main_page():
                     st.rerun()
 
         st.markdown("---")
-        st.markdown("### Google Sheets 연동 진단 로그")
+        st.markdown("### 시스템 진단 로그")
         st.caption(f"현재 db_mode: **{st.session_state.get('db_mode', '알 수 없음')}**")
         debug_log = st.session_state.get('gsheets_debug_log', [])
         if debug_log:
@@ -2252,31 +1990,20 @@ def show_main_page():
         else:
             st.write("진단 로그가 없습니다.")
 
-        full_tbs = st.session_state.get('gsheets_full_traceback', [])
-        if full_tbs:
-            st.markdown("#### 전체 traceback (원인 정밀 확인용)")
-            for tag, tb in full_tbs:
-                with st.expander(f"[{tag}] 전체 traceback 보기"):
-                    st.code(tb, language="text")
-
     # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
     elif selected_tab == "현황 조사 제출 관리" and is_admin:
         st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
         st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
         
         survey_list = st.session_state['app_data'].get('survey', [])
-        
         if not survey_list:
             st.info("아직 제출된 현황조사 데이터가 없습니다.")
         else:
             survey_df = pd.DataFrame(survey_list)
-            
             st.markdown(f"**총 제출 건수:** {len(survey_df)}건")
-            
             st.dataframe(survey_df, use_container_width=True, hide_index=True)
             
             csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
-            
             st.download_button(
                 label="CSV 파일 다운로드",
                 data=csv_data,
@@ -2291,7 +2018,7 @@ def show_main_page():
 # ==========================================
 def show_sidebar():
     with st.sidebar:
-        col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
+        col_side1, col_side2, col_side3 = st.columns()
         with col_side2:
             safe_show_logo(use_container_width=True)
         st.markdown("<h3 style='text-align:center;'>AI 교육혁신처 실험실 포털</h3>", unsafe_allow_html=True)
