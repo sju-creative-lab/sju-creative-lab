@@ -31,7 +31,7 @@ def get_file_text_content(file_url):
 
 def generate_ai_feedback(title, desc, file_url=None):
     try:
-        model = genai.GenerativeModel('gemini-flash-latest')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         file_content = ""
         if file_url:
             file_content = get_file_text_content(file_url)
@@ -374,7 +374,7 @@ if 'show_signup_confirm' not in st.session_state:
 # AI 챗봇 세션 상태 초기화
 if 'ai_chat_history' not in st.session_state:
     st.session_state['ai_chat_history'] = [
-        {"role": "model", "parts": ["안녕하세요. AI 교육혁신처 실험실 포털의 AI 어시스턴트입니다. 대학 행정 자동화, 파이썬 스크립트, 구글 앱스 스크립트 개발과 관련해 궁금한 점을 편하게 문의해 주시기 바랍니다."]}
+        {"role": "model", "parts": ["안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."]}
     ]
 
 
@@ -1404,7 +1404,8 @@ def show_main_page():
     total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
     is_admin = is_user_admin(current_user_id)
     
-    menu_tabs = ["대시보드 현황", "실험실", "AI 어시스턴트 챗봇", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실", "AI 어시스턴트 챗봇"]
+    # AI 챗봇 탭을 제거하고 기존 깔끔한 메뉴 구성 유지
+    menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
     
     st.markdown("""
         <style>
@@ -1562,10 +1563,36 @@ def show_main_page():
 
             render_board_table(page_items, start_idx)
 
-    # ---------------- 탭 2: 산출물 커뮤니티 및 저장소 ----------------
+    # ---------------- 탭 2: 산출물 커뮤니티 및 저장소 (실험실) ----------------
     elif selected_tab == "실험실":
         st.markdown("### 실험실")
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
+
+        # --- [실험실 상단에 플로팅 형태로 배치된 AI 어시스턴트 챗봇 팝오버] ---
+        with st.popover("💬 AI 어시스턴트에게 무엇이든 물어보기", use_container_width=True):
+            st.markdown("##### AI 실시간 어시스턴트")
+            st.caption("행정 자동화, 코드 작성, 기획 관련 궁금증을 편하게 대화해 보세요.")
+            
+            chat_box = st.container(height=300)
+            with chat_box:
+                for msg in st.session_state['ai_chat_history']:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["parts"][0])
+                        
+            if chat_prompt := st.chat_input("질문을 입력하세요...", key="floating_chat_input"):
+                st.session_state['ai_chat_history'].append({"role": "user", "parts": [chat_prompt]})
+                try:
+                    chat_model = genai.GenerativeModel('gemini-1.5-flash')
+                    hist = [{"role": m["role"], "parts": m["parts"]} for m in st.session_state['ai_chat_history'][:-1]]
+                    session = chat_model.start_chat(history=hist)
+                    res = session.send_message(chat_prompt)
+                    bot_ans = res.text
+                except Exception as e:
+                    bot_ans = f"요청량 초과(Quota) 또는 오류 발생: {e}"
+                st.session_state['ai_chat_history'].append({"role": "model", "parts": [bot_ans]})
+                st.rerun()
+
+        st.write("<br>", unsafe_allow_html=True)
 
         rm1, rm2, rm3, rm4 = st.columns(4)
         with rm1:
@@ -1922,40 +1949,7 @@ def show_main_page():
 
                     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------- 탭 3: AI 어시스턴트 챗봇 ----------------
-    elif selected_tab == "AI 어시스턴트 챗봇":
-        st.markdown("### AI 어시스턴트 챗봇")
-        st.caption("대학 행정 자동화, 파이썬 스크립트, 스프레드시트 연동 등에 관해 자유롭게 대화하고 도움을 받아보세요.")
-        
-        chat_container = st.container()
-        with chat_container:
-            for message in st.session_state['ai_chat_history']:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["parts"][0])
-
-        if prompt := st.chat_input("AI 어시스턴트에게 무엇이든 물어보세요 (예: 파이썬으로 엑셀 자동화하는 코드 짜줘)"):
-            st.session_state['ai_chat_history'].append({"role": "user", "parts": [prompt]})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            with st.chat_message("model"):
-                with st.spinner("AI가 답변을 생성하고 있습니다..."):
-                    try:
-                        chat_model = genai.GenerativeModel('gemini-flash-latest')
-                        formatted_history = []
-                        for msg in st.session_state['ai_chat_history'][:-1]:
-                            formatted_history.append({"role": msg["role"], "parts": msg["parts"]})
-                        
-                        chat_session = chat_model.start_chat(history=formatted_history)
-                        response = chat_session.send_message(prompt)
-                        bot_reply = response.text
-                    except Exception as e:
-                        bot_reply = f"답변 생성 중 오류가 발생했습니다: {e}"
-                        
-                    st.markdown(bot_reply)
-                    st.session_state['ai_chat_history'].append({"role": "model", "parts": [bot_reply]})
-
-    # ---------------- 탭 4: 계정 관리 및 부서 설정 (관리자 전용) ----------------
+    # ---------------- 탭 3: 계정 관리 및 부서 설정 (관리자 전용) ----------------
     elif selected_tab == "계정 관리" and is_admin:
         st.markdown("### 시스템 계정 관리")
         users_db = st.session_state['app_data']['users_db']
@@ -2083,7 +2077,7 @@ def show_main_page():
         else:
             st.write("진단 로그가 없습니다.")
 
-    # ---------------- 탭 5: 현황 조사 제출 내역 (관리자 전용) ----------------
+    # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
     elif selected_tab == "현황 조사 제출 관리" and is_admin:
         st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
         st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
