@@ -12,40 +12,57 @@ import math
 import time
 import requests
 import io
+import json
 import streamlit.components.v1 as components
 
 # ==========================================
-# NVIDIA Build API 설정 (OpenAI 호환 방식)
+# NVIDIA Build API 설정 (OpenAI 호환 방식 - Streaming)
 # ==========================================
 NVIDIA_API_KEY = st.secrets.get("NVIDIA_API_KEY", "")
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
-def call_nvidia_llm(system_prompt, user_content):
+def stream_nvidia_llm_messages(messages):
+    """NVIDIA LLM API를 스트리밍 방식으로 호출하여 청크 단위로 반환하는 제너레이터"""
     if not NVIDIA_API_KEY:
-        return "NVIDIA_API_KEY가 Streamlit Secrets에 설정되지 않았습니다."
+        yield "NVIDIA_API_KEY가 Streamlit Secrets에 설정되지 않았습니다."
+        return
     
     headers = {
         "Authorization": f"Bearer {NVIDIA_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream"
     }
     
     payload = {
-            "model": "meta/llama-3.2-11b-vision-instruct",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ],
-        }
+        "model": "meta/llama-3.2-11b-vision-instruct",
+        "messages": messages,
+        "stream": True,
+        "max_tokens": 1024,
+        "temperature": 0.5
+    }
     
     try:
-        response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=30)
+        response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, stream=True, timeout=30)
         if response.status_code == 200:
-            res_json = response.json()
-            return res_json["choices"][0]["message"]["content"]
+            for line in response.iter_lines():
+                if line:
+                    decoded_line = line.decode('utf-8')
+                    if decoded_line.startswith("data: "):
+                        data_str = decoded_line[6:]
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            data_json = json.loads(data_str)
+                            chunk = data_json["choices"][0]["delta"].get("content", "")
+                            if chunk:
+                                yield chunk
+                        except:
+                            pass
         else:
-            return f"NVIDIA API 통신 에러 (코드 {response.status_code}): {response.text}"
+            yield f"NVIDIA API 통신 에러 (코드 {response.status_code}): {response.text}"
     except Exception as e:
-        return f"NVIDIA API 호출 중 오류 발생: {e}"
+        yield f"NVIDIA API 호출 중 오류 발생: {e}"
+
 
 def get_file_text_content(file_url):
     try:
@@ -58,7 +75,8 @@ def get_file_text_content(file_url):
         pass
     return ""
 
-def generate_ai_feedback(title, desc, file_url=None):
+
+def generate_ai_feedback_stream(title, desc, file_url=None):
     file_content = ""
     if file_url:
         file_content = get_file_text_content(file_url)
@@ -75,7 +93,12 @@ def generate_ai_feedback(title, desc, file_url=None):
     - 첨부 파일 소스코드/내용 일부:
     {file_content if file_content else "(첨부된 텍스트 소스코드가 없거나 읽을 수 없는 파일 형식)"}
     """
-    return call_nvidia_llm(system_p, user_p)
+    
+    messages = [
+        {"role": "system", "content": system_p},
+        {"role": "user", "content": user_p}
+    ]
+    return stream_nvidia_llm_messages(messages)
 
 
 # ==========================================
@@ -1427,6 +1450,7 @@ def show_main_page():
 
     total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
     is_admin = is_user_admin(current_user_id)
+    
     menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
     
     st.markdown("""
@@ -1591,22 +1615,36 @@ def show_main_page():
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
 
         # --- [실험실 상단 플로팅 팝오버 형태의 AI 어시스턴트 챗봇] ---
-        with st.popover("💬 AI 어시스턴트에게 무엇이든 물어보기", use_container_width=True):
+        with st.popover("AI 어시스턴트에게 무엇이든 물어보기", use_container_width=True):
             st.markdown("##### AI 실시간 어시스턴트")
             st.caption("행정 자동화, 코드 작성, 기획 관련 궁금증을 편하게 대화해 보세요.")
             
             chat_box = st.container(height=300)
             with chat_box:
                 for msg in st.session_state['ai_chat_history']:
-                    with st.chat_message(msg["role"]):
+                    # 이모지 제거를 위해 아바타 텍스트 적용
+                    avatar_val = "AI" if msg["role"] == "assistant" else "👤"
+                    with st.chat_message(msg["role"], avatar=avatar_val):
                         st.markdown(msg["content"])
                         
             if chat_prompt := st.chat_input("질문을 입력하세요...", key="floating_chat_input"):
                 st.session_state['ai_chat_history'].append({"role": "user", "content": chat_prompt})
-                bot_ans = call_nvidia_llm(
-                    "당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다.",
-                    chat_prompt
-                )
+                
+                with chat_box:
+                    with st.chat_message("user", avatar="👤"):
+                        st.markdown(chat_prompt)
+                        
+                    with st.chat_message("assistant", avatar="AI"):
+                        # 히스토리를 기반으로 메시지 배열 구성
+                        messages = [{"role": "system", "content": "당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다."}]
+                        for m in st.session_state['ai_chat_history']:
+                            if m["role"] in ["user", "assistant"]:
+                                messages.append({"role": m["role"], "content": m["content"]})
+                        
+                        # 스트리밍 효과 적용 (Typewriter Effect)
+                        stream_gen = stream_nvidia_llm_messages(messages)
+                        bot_ans = st.write_stream(stream_gen)
+                
                 st.session_state['ai_chat_history'].append({"role": "assistant", "content": bot_ans})
                 st.rerun()
 
@@ -1860,21 +1898,26 @@ def show_main_page():
                     with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
                         
                         if st.button("AI 어시스턴트 분석 및 피드백 요청", key=f"ai_btn_{item['id']}", use_container_width=True):
-                            with st.spinner("AI가 산출물 설명 및 첨부파일 코드를 분석하여 오류와 개선점을 진단하고 있습니다..."):
-                                target_file_url = item.get('file_url')
-                                if not target_file_url and item.get('files'):
-                                    target_file_url = item['files'][0].get('file_url')
+                            placeholder = st.empty()
+                            with placeholder.container():
+                                with st.chat_message("assistant", avatar="AI"):
+                                    target_file_url = item.get('file_url')
+                                    if not target_file_url and item.get('files'):
+                                        target_file_url = item['files'][0].get('file_url')
                                     
-                                ai_reply = generate_ai_feedback(item['title'], item['desc'], target_file_url)
-                                if ai_reply:
-                                    item['feedbacks'].append({
-                                        "user": "AI 어시스턴트",
-                                        "time": now_kst().strftime("%Y-%m-%d %H:%M"),
-                                        "text": ai_reply
-                                    })
-                                    save_data(st.session_state['app_data'])
-                                    if st.session_state.get('last_save_status') != "fail":
-                                        st.rerun()
+                                    # 스트리밍 효과 적용
+                                    stream_gen = generate_ai_feedback_stream(item['title'], item['desc'], target_file_url)
+                                    ai_reply = st.write_stream(stream_gen)
+                                
+                            if ai_reply:
+                                item['feedbacks'].append({
+                                    "user": "AI 어시스턴트",
+                                    "time": now_kst().strftime("%Y-%m-%d %H:%M"),
+                                    "text": ai_reply
+                                })
+                                save_data(st.session_state['app_data'])
+                                if st.session_state.get('last_save_status') != "fail":
+                                    st.rerun()
 
                         for f_idx, fb in enumerate(item['feedbacks']):
                             fb_display_name = get_display_name(fb['user'])
@@ -2129,7 +2172,7 @@ def show_sidebar():
 
         with st.form(key=f"sidebar_search_form_{_reset_suffix}"):
             st.selectbox("부서", options=cat_options, key=_cat_key)
-            st.selectbox("정렬 기준", ["최근 활동순", "i슈 많은순"], key=_sort_key)
+            st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key=_sort_key)
             st.text_input("검색어 (입력 후 Enter)", placeholder="프로젝트 검색...", key=_kw_key)
             
             cb1, cb2 = st.columns(2)
