@@ -21,7 +21,7 @@ genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 def generate_ai_feedback(title, desc):
     try:
         # 응답이 빠른 flash 모델 사용
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-flash-latest')
         prompt = f"""
         당신은 대학 행정 및 교육 혁신을 돕는 친절한 'AI 어시스턴트'입니다.
         다음은 교직원이 자동화를 위해 기획/개발한 프로토타입 산출물입니다.
