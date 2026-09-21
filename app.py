@@ -13,10 +13,39 @@ import time
 import requests
 import io
 import streamlit.components.v1 as components
-import google.generativeai as genai
 
-# Streamlit Secrets에서 API 키를 안전하게 불러오기
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+# ==========================================
+# NVIDIA Build API 설정 (OpenAI 호환 방식)
+# ==========================================
+NVIDIA_API_KEY = st.secrets.get("NVIDIA_API_KEY", "")
+NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+def call_nvidia_llm(system_prompt, user_content):
+    if not NVIDIA_API_KEY:
+        return "NVIDIA_API_KEY가 Streamlit Secrets에 설정되지 않았습니다."
+    
+    headers = {
+        "Authorization": f"Bearer {NVIDIA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+            "model": "meta/llama-3.2-11b-vision-instruct",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+        }
+    
+    try:
+        response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=30)
+        if response.status_code == 200:
+            res_json = response.json()
+            return res_json["choices"][0]["message"]["content"]
+        else:
+            return f"NVIDIA API 통신 에러 (코드 {response.status_code}): {response.text}"
+    except Exception as e:
+        return f"NVIDIA API 호출 중 오류 발생: {e}"
 
 def get_file_text_content(file_url):
     try:
@@ -30,28 +59,23 @@ def get_file_text_content(file_url):
     return ""
 
 def generate_ai_feedback(title, desc, file_url=None):
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        file_content = ""
-        if file_url:
-            file_content = get_file_text_content(file_url)
-            
-        prompt = f"""
-        당신은 대학 행정 및 교육 혁신을 지원하는 전문 'AI 시니어 엔지니어 및 행정 자동화 컨설턴트'입니다.
-        다음은 교직원이 자동화를 위해 기획/개발한 프로토타입 산출물입니다. 이 산출물을 면밀히 분석해 주세요.
+    file_content = ""
+    if file_url:
+        file_content = get_file_text_content(file_url)
+        
+    system_p = "당신은 대학 행정 및 교육 혁신을 지원하는 전문 'AI 시니어 엔지니어 및 행정 자동화 컨설턴트'입니다."
+    user_p = f"""
+    다음은 교직원이 자동화를 위해 기획/개발한 프로토타입 산출물입니다. 이 산출물을 면밀히 분석해 주세요.
 
-        1. 제공된 설명과 소스코드(파일 내용)를 바탕으로 잠재적인 오류, 예외 처리 누락, 버그 또는 행정적 모순이 있는지 진단해 주세요.
-        2. 실무 적용 시 보완해야 할 기술적/행정적 개선점(예외처리, 보안, UI/UX 등)을 명확하게 3~4문장으로 요약해 주세요.
+    1. 제공된 설명과 소스코드(파일 내용)를 바탕으로 잠재적인 오류, 예외 처리 누락, 버그 또는 행정적 모순이 있는지 진단해 주세요.
+    2. 실무 적용 시 보완해야 할 기술적/행정적 개선점(예외처리, 보안, UI/UX 등)을 명확하게 3~4문장으로 요약해 주세요.
 
-        - 프로젝트명: {title}
-        - 설명: {desc}
-        - 첨부 파일 소스코드/내용 일부:
-        {file_content if file_content else "(첨부된 텍스트 소스코드가 없거나 읽을 수 없는 파일 형식)"}
-        """
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"AI 피드백 생성 중 오류가 발생했습니다: {e}"
+    - 프로젝트명: {title}
+    - 설명: {desc}
+    - 첨부 파일 소스코드/내용 일부:
+    {file_content if file_content else "(첨부된 텍스트 소스코드가 없거나 읽을 수 없는 파일 형식)"}
+    """
+    return call_nvidia_llm(system_p, user_p)
 
 
 # ==========================================
@@ -374,7 +398,7 @@ if 'show_signup_confirm' not in st.session_state:
 # AI 챗봇 세션 상태 초기화
 if 'ai_chat_history' not in st.session_state:
     st.session_state['ai_chat_history'] = [
-        {"role": "model", "parts": ["안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."]}
+        {"role": "assistant", "content": "안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."}
     ]
 
 
@@ -1403,8 +1427,6 @@ def show_main_page():
 
     total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
     is_admin = is_user_admin(current_user_id)
-    
-    # AI 챗봇 탭을 제거하고 기존 깔끔한 메뉴 구성 유지
     menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
     
     st.markdown("""
@@ -1568,7 +1590,7 @@ def show_main_page():
         st.markdown("### 실험실")
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
 
-        # --- [실험실 상단에 플로팅 형태로 배치된 AI 어시스턴트 챗봇 팝오버] ---
+        # --- [실험실 상단 플로팅 팝오버 형태의 AI 어시스턴트 챗봇] ---
         with st.popover("💬 AI 어시스턴트에게 무엇이든 물어보기", use_container_width=True):
             st.markdown("##### AI 실시간 어시스턴트")
             st.caption("행정 자동화, 코드 작성, 기획 관련 궁금증을 편하게 대화해 보세요.")
@@ -1577,19 +1599,15 @@ def show_main_page():
             with chat_box:
                 for msg in st.session_state['ai_chat_history']:
                     with st.chat_message(msg["role"]):
-                        st.markdown(msg["parts"][0])
+                        st.markdown(msg["content"])
                         
             if chat_prompt := st.chat_input("질문을 입력하세요...", key="floating_chat_input"):
-                st.session_state['ai_chat_history'].append({"role": "user", "parts": [chat_prompt]})
-                try:
-                    chat_model = genai.GenerativeModel('gemini-1.5-flash')
-                    hist = [{"role": m["role"], "parts": m["parts"]} for m in st.session_state['ai_chat_history'][:-1]]
-                    session = chat_model.start_chat(history=hist)
-                    res = session.send_message(chat_prompt)
-                    bot_ans = res.text
-                except Exception as e:
-                    bot_ans = f"요청량 초과(Quota) 또는 오류 발생: {e}"
-                st.session_state['ai_chat_history'].append({"role": "model", "parts": [bot_ans]})
+                st.session_state['ai_chat_history'].append({"role": "user", "content": chat_prompt})
+                bot_ans = call_nvidia_llm(
+                    "당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다.",
+                    chat_prompt
+                )
+                st.session_state['ai_chat_history'].append({"role": "assistant", "content": bot_ans})
                 st.rerun()
 
         st.write("<br>", unsafe_allow_html=True)
@@ -1945,7 +1963,7 @@ def show_main_page():
                                 if st.session_state.get('last_save_status') != "fail":
                                     st.rerun()
                             else:
-                                st.warning("이슈 제목을 입력해 주세요.")
+                                st.warning("NVIDIA API 또는 입력값 오류를 확인해 주세요.")
 
                     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1969,7 +1987,6 @@ def show_main_page():
         st.dataframe(users_df, use_container_width=True, hide_index=True)
 
         st.markdown("#### 회원가입 승인 대기 목록")
-        st.caption("현재는 회원가입 시 자동 승인되므로 이 목록은 비어있는 것이 정상입니다.")
         pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", True)]
         if not pending_users:
             st.info("승인 대기 중인 계정이 없습니다.")
@@ -2112,7 +2129,7 @@ def show_sidebar():
 
         with st.form(key=f"sidebar_search_form_{_reset_suffix}"):
             st.selectbox("부서", options=cat_options, key=_cat_key)
-            st.selectbox("정렬 기준", ["최근 활동순", "이슈 많은순"], key=_sort_key)
+            st.selectbox("정렬 기준", ["최근 활동순", "i슈 많은순"], key=_sort_key)
             st.text_input("검색어 (입력 후 Enter)", placeholder="프로젝트 검색...", key=_kw_key)
             
             cb1, cb2 = st.columns(2)
