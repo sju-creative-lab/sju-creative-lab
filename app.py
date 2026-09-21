@@ -811,7 +811,7 @@ def _render_signup_confirm_body():
     """, unsafe_allow_html=True)
     st.write("")
 
-    c1, c2 = st.columns()
+    c1, c2 = st.columns(2)
     with c1:
         btn_cancel = st.button("다시 입력하기", key="signup_confirm_cancel", use_container_width=True)
     with c2:
@@ -1073,7 +1073,7 @@ def show_survey_page():
     """, unsafe_allow_html=True)
     
     with st.form("survey_form"):
-        c1, c2 = st.columns()
+        c1, c2 = st.columns(2)
         with c1:
             dept = st.text_input("부서명", value=uinfo.get('dept', ''))
         with c2:
@@ -1082,13 +1082,13 @@ def show_survey_page():
         task_name = st.text_input("업무명", placeholder="예: 멀티스튜디오 예약관리")
         media = st.text_input("관리 매체 (통합정보시스템, 별도 엑셀관리 등)", placeholder="예: 별도 엑셀대장 관리")
 
-        c3, c4 = st.columns()
+        c3, c4 = st.columns(2)
         with c3:
             main_user = st.text_input("주 사용자", placeholder="예: 원격교육지원센터 담당직원, 각 학과 직원")
         with c4:
             freq = st.text_input("업무주기 (주당)", placeholder="예: 주 3회 이상")
 
-        c5, c6 = st.columns()
+        c5, c6 = st.columns(2)
         with c5:
             time_spent = st.text_input("1회 소요시간", placeholder="예: 30분")
         with c6:
@@ -1680,7 +1680,7 @@ def show_main_page():
                                 with st.container(border=True):
                                     st.markdown(f"<div style='font-size:13px; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; margin-bottom:6px;' title='{f_name}'>{f_name}</div>", unsafe_allow_html=True)
                                     
-                                    btn_c1, btn_c2 = st.columns()
+                                    btn_c1, btn_c2 = st.columns(2)
                                     with btn_c1:
                                         if f_info.get('file_url') and str(f_info['file_url']).startswith("http"):
                                             st.link_button("다운로드", url=f_info['file_url'], use_container_width=True)
@@ -1910,7 +1910,7 @@ def show_main_page():
                 uinfo = users_db[uid]
                 current_role = uinfo.get("role", "user")
                 with st.container(border=True):
-                    rc1, rc2, rc3 = st.columns([3, 1.3, 1.3])
+                    rc1, rc2, rc3 = st.columns()
                     with rc1:
                         role_badge_class = "role-badge-admin" if current_role == "admin" else "role-badge-user"
                         role_label = "관리자" if current_role == "admin" else "일반 사용자"
