@@ -1622,8 +1622,7 @@ def show_main_page():
             chat_box = st.container(height=300)
             with chat_box:
                 for msg in st.session_state['ai_chat_history']:
-                    # 이모지 제거를 위해 아바타 텍스트 적용
-                    with st.chat_message(msg["role"], avatar=avatar_val):
+                    with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
                         
             if chat_prompt := st.chat_input("질문을 입력하세요...", key="floating_chat_input"):
