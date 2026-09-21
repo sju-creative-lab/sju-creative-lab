@@ -18,17 +18,35 @@ import google.generativeai as genai
 # Streamlit Secrets에서 API 키를 안전하게 불러오기
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-def generate_ai_feedback(title, desc):
+def get_file_text_content(file_url):
     try:
-        # 응답이 빠른 flash 모델 사용
+        if not file_url or not str(file_url).startswith("http"):
+            return ""
+        r = requests.get(file_url, timeout=10)
+        if r.status_code == 200:
+            return r.content.decode('utf-8', errors='ignore')[:6000]
+    except Exception:
+        pass
+    return ""
+
+def generate_ai_feedback(title, desc, file_url=None):
+    try:
         model = genai.GenerativeModel('gemini-flash-latest')
+        file_content = ""
+        if file_url:
+            file_content = get_file_text_content(file_url)
+            
         prompt = f"""
-        당신은 대학 행정 및 교육 혁신을 돕는 친절한 'AI 어시스턴트'입니다.
-        다음은 교직원이 자동화를 위해 기획/개발한 프로토타입 산출물입니다.
-        이 산출물의 설명과 제목을 분석하여, 긍정적인 피드백과 실무 적용 시 고려하면 좋을 기술적/행정적 개선점(예외처리, 보안, UI/UX 등)을 3~4문장으로 요약해 주세요.
+        당신은 대학 행정 및 교육 혁신을 지원하는 전문 'AI 시니어 엔지니어 및 행정 자동화 컨설턴트'입니다.
+        다음은 교직원이 자동화를 위해 기획/개발한 프로토타입 산출물입니다. 이 산출물을 면밀히 분석해 주세요.
+
+        1. 제공된 설명과 소스코드(파일 내용)를 바탕으로 잠재적인 오류, 예외 처리 누락, 버그 또는 행정적 모순이 있는지 진단해 주세요.
+        2. 실무 적용 시 보완해야 할 기술적/행정적 개선점(예외처리, 보안, UI/UX 등)을 명확하게 3~4문장으로 요약해 주세요.
 
         - 프로젝트명: {title}
         - 설명: {desc}
+        - 첨부 파일 소스코드/내용 일부:
+        {file_content if file_content else "(첨부된 텍스트 소스코드가 없거나 읽을 수 없는 파일 형식)"}
         """
         response = model.generate_content(prompt)
         return response.text
@@ -45,7 +63,6 @@ AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
 PAGE_SIZE = 10
 
-# 기존에 배포된 구글 웹 앱 URL 및 인증 키 (GCP 쿼터 제한 없이 무제한 호출 가능)
 GAS_URL = "https://script.google.com/macros/s/AKfycbxXXElTYATgiI3gGTP7AdD8Bg5QkuEwBA39HlMrUoXQSppLGBHu0Vf2O1qLkxmeHaa-/exec"
 SECRET_KEY = "sju_secret_2026"
 
@@ -81,9 +98,6 @@ def safe_show_logo(width=None, use_container_width=False):
         )
 
 
-# ------------------------------------------
-# 구글 드라이브 파일 업로드 함수 (GAS 연동)
-# ------------------------------------------
 def upload_to_gdrive_and_get_link(uploaded_file):
     file_bytes = uploaded_file.getvalue()
     file_b64 = base64.b64encode(file_bytes).decode('utf-8')
@@ -106,9 +120,6 @@ def upload_to_gdrive_and_get_link(uploaded_file):
         raise Exception(f"서버 통신 실패 (상태 코드: {response.status_code})")
 
 
-# ------------------------------------------
-# 구글 드라이브 파일 삭제 함수 (휴지통 이동)
-# ------------------------------------------
 def delete_from_gdrive(file_url):
     if not file_url or "id=" not in file_url:
         return
@@ -126,7 +137,7 @@ def delete_from_gdrive(file_url):
 
 
 # ==========================================
-# 1. DB 연동 (GAS 웹앱 ↔ 구글 스프레드시트 ↔ 로컬 하이브리드)
+# 1. DB 연동
 # ==========================================
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data():
@@ -167,8 +178,6 @@ def load_data():
             result = res.json()
             if result.get("success"):
                 _log("GAS 웹 앱을 통한 구글 시트 전체 동기화 성공")
-                
-                # 1. Users 동기화
                 users_list = result.get("users", [])
                 if users_list:
                     merged_users = {}
@@ -200,7 +209,6 @@ def load_data():
                         merged_users["admin"] = {"password": "password1234", "dept": "시스템관리자", "manager": "관리자", "approved": True, "role": "admin", "survey_completed": True}
                     local_data['users_db'] = merged_users
 
-                # 2. Repository 동기화
                 repo_list = result.get("repository", [])
                 if repo_list:
                     parsed_repo = []
@@ -221,7 +229,6 @@ def load_data():
                         parsed_repo.append(s_item)
                     local_data['repository'] = parsed_repo
 
-                # 3. Categories 동기화
                 cat_list = result.get("categories", [])
                 if cat_list:
                     extracted = [str(c.get("category", "")).strip() for c in cat_list if c.get("category")]
@@ -229,12 +236,10 @@ def load_data():
                         extracted.insert(0, "전체")
                     local_data['categories'] = extracted
 
-                # 4. Survey 동기화
                 survey_list = result.get("survey", [])
                 if survey_list:
                     local_data['survey'] = survey_list
 
-                # 5. TimelineLog 동기화
                 tl_list = result.get("timeline_log", [])
                 if tl_list:
                     local_data['timeline_log'] = tl_list
@@ -249,11 +254,9 @@ def load_data():
 
 
 def save_data(data):
-    # 1. 로컬 캐시 즉시 저장
     with open(DATA_FILE, "wb") as f:
         pickle.dump(data, f)
 
-    # 2. GAS 웹 앱을 통한 스프레드시트 일괄 업데이트
     try:
         users_rows = []
         for uid, uinfo in data.get('users_db', {}).items():
@@ -291,7 +294,7 @@ def save_data(data):
         res = requests.post(GAS_URL, json=payload, timeout=30)
         if res.status_code == 200 and res.json().get("success"):
             st.session_state['last_save_status'] = "success"
-            load_data.clear()  # 구글 시트 저장 성공 시 캐시 초기화
+            load_data.clear()
         else:
             st.session_state['last_save_status'] = "fail"
             st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"시트 저장 실패: {res.text}"))
@@ -336,7 +339,6 @@ if 'app_data' not in st.session_state:
     st.session_state['app_data'] = load_data()
     splash_placeholder.empty()
 
-# 새로고침 방지를 위한 세션 초기화 로직
 if 'logged_in' not in st.session_state:
     if "uid" in st.query_params and st.query_params["uid"] in st.session_state.get('app_data', {}).get('users_db', {}):
         st.session_state['logged_in'] = True
@@ -368,6 +370,12 @@ if 'pending_signup' not in st.session_state:
     st.session_state['pending_signup'] = None
 if 'show_signup_confirm' not in st.session_state:
     st.session_state['show_signup_confirm'] = False
+
+# AI 챗봇 세션 상태 초기화
+if 'ai_chat_history' not in st.session_state:
+    st.session_state['ai_chat_history'] = [
+        {"role": "model", "parts": ["안녕하세요! AI 교육혁신처 실험실 포털의 AI 어시스턴트입니다. 대학 행정 자동화, 파이썬 스크립트, 구글 앱스 스크립트(GAS) 개발과 관련해 궁금한 점을 편하게 물어보세요!"]}
+    ]
 
 
 def get_display_name(user_id):
@@ -818,9 +826,6 @@ def inject_design_system():
 inject_design_system()
 
 
-# ==========================================
-# 2-2. 회원가입 확인 모달
-# ==========================================
 def _render_signup_confirm_body():
     pending = st.session_state.get('pending_signup')
     if not pending:
@@ -871,9 +876,7 @@ else:
             st.markdown("#### 회원가입 정보 확인")
             _render_signup_confirm_body()
 
-# ==========================================
-# 비정상 접근 안내 팝업 (현황조사 미제출자)
-# ==========================================
+
 def _render_abnormal_access_body():
     st.markdown("현황조사가 정상적으로 제출되지 않은 비정상적인 접근입니다.<br>모든 항목에 대해 내용 입력 후 제출 버튼을 눌러주시기 바랍니다.", unsafe_allow_html=True)
     st.write("")
@@ -896,9 +899,7 @@ else:
             st.markdown("#### 접근 안내")
             _render_abnormal_access_body()
 
-# ==========================================
-# 3-2. 파일 미리보기 모달 팝업
-# ==========================================
+
 def _render_preview_body(filename, file_url, legacy_data):
     import re
     file_ext = filename.split('.')[-1].lower() if filename else ''
@@ -976,9 +977,7 @@ else:
     def show_preview_modal(filename, file_url, legacy_data):
         st.warning("현재 Streamlit 버전에서는 모달 팝업을 지원하지 않습니다. 버전을 업데이트해 주세요.")
 
-# ==========================================
-# 3. 로그인 및 회원가입 화면
-# ==========================================
+
 def show_login_page():
     col1, col2, col3 = st.columns(3)
     with col2:
@@ -1058,9 +1057,6 @@ def show_login_page():
         show_signup_confirm_dialog()
 
 
-# ==========================================
-# 3-1. 부서별 자동화 현황조사
-# ==========================================
 def _render_survey_success_body():
     st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
@@ -1169,9 +1165,6 @@ def show_survey_page():
         safe_show_logo(use_container_width=True)
 
 
-# ==========================================
-# 4. 저장소 데이터 조회 및 컴포넌트
-# ==========================================
 def get_filtered_repo():
     repo_data = st.session_state['app_data']['repository']
     cat_filter = st.session_state.get(_cat_key, '전체')
@@ -1350,7 +1343,7 @@ def render_department_timeline():
 # ==========================================
 def show_main_page():
     current_user_id = st.session_state.get('user_id', '')
-    users_db = st.session_state.get('app_data', {}).get('users_db', {})
+    users_db = st.session_state['app_data'].get('users_db', {})
     uinfo = users_db.get(current_user_id, {})
     
     if not uinfo.get('survey_completed', False):
@@ -1405,12 +1398,14 @@ def show_main_page():
     for p in repo_data_all:
         all_issues.extend(p.get('issues', []))
     total_issues = len(all_issues)
-    open_issues = len([i for i in all_issues if i.get('status') == '진행중'])
-    done_issues = len([i for i in all_issues if i.get('status') == '완료'])
+    open_issues = len([i for i in all_issues if i.get('status'] == '진행중'])
+    done_issues = len([i for i in all_issues if i.get('status'] == '완료'])
 
     total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
     is_admin = is_user_admin(current_user_id)
-    menu_tabs = ["대시보드 현황", "실험실", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실"]
+    
+    # 메뉴 탭에 'AI 어시스턴트 챗봇' 추가
+    menu_tabs = ["대시보드 현황", "실험실", "AI 어시스턴트 챗봇", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실", "AI 어시스턴트 챗봇"]
     
     st.markdown("""
         <style>
@@ -1428,7 +1423,6 @@ def show_main_page():
             padding: 0 !important;
             margin-bottom: 24px !important;
         }
-        /* 라디오 버튼 원형 아이콘 숨기기 강제 적용 */
         div[data-testid="stRadio"] div[role="radio"] > div:first-child,
         div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child,
         div[data-testid="stRadio"] label > div:first-child {
@@ -1819,12 +1813,16 @@ def show_main_page():
 
                     st.write("")
 
-                    with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
-
-                        # --- [새로 추가되는 AI 피드백 요청 버튼] ---
+                    with st.expider_replacement if False else st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
+                        
+                        # --- [산출물 파일 내용까지 분석하는 AI 피드백 버튼] ---
                         if st.button("AI 어시스턴트 분석 및 피드백 요청", key=f"ai_btn_{item['id']}", use_container_width=True):
-                            with st.spinner("AI가 산출물을 분석하여 맞춤형 피드백을 작성하고 있습니다..."):
-                                ai_reply = generate_ai_feedback(item['title'], item['desc'])
+                            with st.spinner("AI가 산출물 설명 및 첨부파일 코드를 분석하여 오류와 개선점을 진단하고 있습니다..."):
+                                target_file_url = item.get('file_url')
+                                if not target_file_url and item.get('files'):
+                                    target_file_url = item['files'][0].get('file_url')
+                                    
+                                ai_reply = generate_ai_feedback(item['title'], item['desc'], target_file_url)
                                 if ai_reply:
                                     item['feedbacks'].append({
                                         "user": "AI 어시스턴트",
@@ -1842,7 +1840,6 @@ def show_main_page():
                             fb_col1, fb_col2 = st.columns([8.8, 1.2])
                             with fb_col1:
                                 if fb['user'] == "AI 어시스턴트":
-                                    # Linear 스타일의 모던한 AI 피드백 렌더링
                                     st.markdown(f"""
                                         <div style='background-color:var(--card); border: 1px solid var(--border); padding:14px; border-radius:10px; margin-bottom:6px; box-shadow: var(--shadow-sm); border-top: 3px solid var(--foreground);'>
                                             <div style='display:flex; align-items:center; gap:8px; margin-bottom:8px;'>
@@ -1853,11 +1850,10 @@ def show_main_page():
                                         </div>
                                     """, unsafe_allow_html=True)
                                 else:
-                                    # 일반 사용자 피드백 렌더링
                                     st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span><div style='margin-top:4px; font-size:13px; line-height:1.5;'>{safe_text}</div></div>", unsafe_allow_html=True)
                                     
                             with fb_col2:
-                                if is_admin:
+                                if is_admin or current_user_str == str(fb.get('user', '')).strip():
                                     if st.button("삭제", key=f"del_fb_{item['id']}_{f_idx}", use_container_width=True):
                                         item['feedbacks'].pop(f_idx)
                                         save_data(st.session_state['app_data'])
@@ -1874,8 +1870,8 @@ def show_main_page():
                                     st.rerun()
 
                     item_issues = item.get('issues', [])
-                    open_cnt = len([i for i in item_issues if i.get('status') == '진행중'])
-                    done_cnt = len([i for i in item_issues if i.get('status') == '완료'])
+                    open_cnt = len([i for i in item_issues if i.get('status'] == '진행중'])
+                    done_cnt = len([i for i in item_issues if i.get('status'] == '완료'])
                     with st.expander(f"이슈 ({len(item_issues)}건 · 진행중 {open_cnt} / 완료 {done_cnt})"):
                         if not item_issues:
                             st.caption("등록된 이슈가 없습니다.")
@@ -1928,7 +1924,43 @@ def show_main_page():
 
                     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------- 탭 3: 계정 관리 및 부서 설정 (관리자 전용) ----------------
+    # ---------------- 탭 3: AI 어시스턴트 챗봇 ----------------
+    elif selected_tab == "AI 어시스턴트 챗봇":
+        st.markdown("### AI 어시스턴트 챗봇")
+        st.caption("대학 행정 자동화, 파이썬 스크립트, 스프레드시트 연동 등에 관해 자유롭게 대화하고 도움을 받아보세요.")
+        
+        # 채팅 내역 표시 컨테이너
+        chat_container = st.container()
+        with chat_container:
+            for message in st.session_state['ai_chat_history']:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["parts"][0])
+
+        # 사용자 입력 창
+        if prompt := st.chat_input("AI 어시스턴트에게 무엇이든 물어보세요 (예: 파이썬으로 엑셀 자동화하는 코드 짜줘)"):
+            st.session_state['ai_chat_history'].append({"role": "user", "parts": [prompt]})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("model"):
+                with st.spinner("AI가 답변을 생성하고 있습니다..."):
+                    try:
+                        chat_model = genai.GenerativeModel('gemini-flash-latest')
+                        # 대화 기록 전달
+                        formatted_history = []
+                        for msg in st.session_state['ai_chat_history'][:-1]:
+                            formatted_history.append({"role": msg["role"], "parts": msg["parts"]})
+                        
+                        chat_session = chat_model.start_chat(history=formatted_history)
+                        response = chat_session.send_message(prompt)
+                        bot_reply = response.text
+                    except Exception as e:
+                        bot_reply = f"답변 생성 중 오류가 발생했습니다: {e}"
+                        
+                    st.markdown(bot_reply)
+                    st.session_state['ai_chat_history'].append({"role": "model", "parts": [bot_reply]})
+
+    # ---------------- 탭 4: 계정 관리 및 부서 설정 (관리자 전용) ----------------
     elif selected_tab == "계정 관리" and is_admin:
         st.markdown("### 시스템 계정 관리")
         users_db = st.session_state['app_data']['users_db']
@@ -2056,7 +2088,7 @@ def show_main_page():
         else:
             st.write("진단 로그가 없습니다.")
 
-    # ---------------- 탭 4: 현황 조사 제출 내역 (관리자 전용) ----------------
+    # ---------------- 탭 5: 현황 조사 제출 내역 (관리자 전용) ----------------
     elif selected_tab == "현황 조사 제출 관리" and is_admin:
         st.markdown("부서별 자동화 대상 업무 현황조사 제출 내역")
         st.caption("회원가입 후 최초 로그인 시 제출받은 현황조사 데이터입니다.")
@@ -2079,9 +2111,6 @@ def show_main_page():
             )
 
 
-# ==========================================
-# 6. 사이드바 구성
-# ==========================================
 def show_sidebar():
     with st.sidebar:
         col_side1, col_side2, col_side3 = st.columns(3)
@@ -2124,9 +2153,6 @@ def show_sidebar():
         """, unsafe_allow_html=True)
 
 
-# ==========================================
-# 7. 최종 라우팅
-# ==========================================
 if not st.session_state['logged_in']:
     st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
     show_login_page()
