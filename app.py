@@ -64,22 +64,35 @@ def stream_nvidia_llm_messages(messages):
         yield f"NVIDIA API 호출 중 오류 발생: {e}"
 
 
-def get_file_text_content(file_url):
+def get_file_text_content(file_url, filename=""):
     try:
         if not file_url or not str(file_url).startswith("http"):
             return ""
+        
+        # 엑셀, 워드, 이미지 등 텍스트로 읽을 수 없는 파일 확장자 사전 차단
+        binary_exts = ['.xlsx', '.xlsm', '.xls', '.docx', '.doc', '.ppt', '.pptx', '.pdf', '.zip', '.png', '.jpg', '.jpeg', '.gif']
+        if filename:
+            ext = '.' + filename.split('.')[-1].lower() if '.' in filename else ''
+            if ext in binary_exts:
+                return f"(첨부된 '{filename}' 파일은 문서/바이너리 형식이므로 텍스트 기반 코드 분석이 불가능합니다.)"
+
         r = requests.get(file_url, timeout=10)
         if r.status_code == 200:
-            return r.content.decode('utf-8', errors='ignore')[:6000]
+            content = r.content
+            # 내용이 'PK' (ZIP/엑셀) 헤더로 시작하는지 한 번 더 방어
+            if content.startswith(b'PK\x03\x04'):
+                return "(엑셀 등 문서 파일이므로 텍스트 분석을 생략합니다.)"
+                
+            return content.decode('utf-8', errors='ignore')[:6000]
     except Exception:
         pass
     return ""
 
 
-def generate_ai_feedback_stream(title, desc, file_url=None):
+def generate_ai_feedback_stream(title, desc, file_url=None, filename=""):
     file_content = ""
     if file_url:
-        file_content = get_file_text_content(file_url)
+        file_content = get_file_text_content(file_url, filename)
         
     system_p = "당신은 대학 행정 및 교육 혁신을 지원하는 전문 'AI 시니어 엔지니어 및 행정 자동화 컨설턴트'입니다."
     user_p = f"""
@@ -1382,7 +1395,7 @@ def render_department_timeline():
         avg_df["소요시간(시간)"] = avg_df["소요시간(시간)"].round(1)
         st.dataframe(avg_df, use_container_width=True, hide_index=True)
     else:
-        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 없습니다. 실험실 목록에서 산출물을 '완료 처리'해 보세요.")
+        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 일습니다. 실험실 목록에서 산출물을 '완료 처리'해 보세요.")
 
 
 # ==========================================
@@ -1900,11 +1913,13 @@ def show_main_page():
                             with placeholder.container():
                                 with st.chat_message("assistant"):
                                     target_file_url = item.get('file_url')
+                                    target_filename = item.get('filename', '')
                                     if not target_file_url and item.get('files'):
                                         target_file_url = item['files'][0].get('file_url')
+                                        target_filename = item['files'][0].get('filename', '')
                                     
                                     # 스트리밍 효과 적용
-                                    stream_gen = generate_ai_feedback_stream(item['title'], item['desc'], target_file_url)
+                                    stream_gen = generate_ai_feedback_stream(item['title'], item['desc'], target_file_url, target_filename)
                                     ai_reply = st.write_stream(stream_gen)
                                 
                             if ai_reply:
