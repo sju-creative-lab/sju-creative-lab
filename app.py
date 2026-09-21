@@ -374,7 +374,7 @@ if 'show_signup_confirm' not in st.session_state:
 # AI 챗봇 세션 상태 초기화
 if 'ai_chat_history' not in st.session_state:
     st.session_state['ai_chat_history'] = [
-        {"role": "model", "parts": ["안녕하세요! AI 교육혁신처 실험실 포털의 AI 어시스턴트입니다. 대학 행정 자동화, 파이썬 스크립트, 구글 앱스 스크립트(GAS) 개발과 관련해 궁금한 점을 편하게 물어보세요!"]}
+        {"role": "model", "parts": ["안녕하세요. AI 교육혁신처 실험실 포털의 AI 어시스턴트입니다. 대학 행정 자동화, 파이썬 스크립트, 구글 앱스 스크립트 개발과 관련해 궁금한 점을 편하게 문의해 주시기 바랍니다."]}
     ]
 
 
@@ -1398,13 +1398,12 @@ def show_main_page():
     for p in repo_data_all:
         all_issues.extend(p.get('issues', []))
     total_issues = len(all_issues)
-    open_issues = len([i for i in all_issues if i.get('status'] == '진행중'])
-    done_issues = len([i for i in all_issues if i.get('status'] == '완료'])
+    open_issues = len([i for i in all_issues if i.get('status') == '진행중'])
+    done_issues = len([i for i in all_issues if i.get('status') == '완료'])
 
     total_feedbacks = sum(len(p.get('feedbacks', [])) for p in repo_data_all)
     is_admin = is_user_admin(current_user_id)
     
-    # 메뉴 탭에 'AI 어시스턴트 챗봇' 추가
     menu_tabs = ["대시보드 현황", "실험실", "AI 어시스턴트 챗봇", "계정 관리", "현황 조사 제출 관리"] if is_admin else ["대시보드 현황", "실험실", "AI 어시스턴트 챗봇"]
     
     st.markdown("""
@@ -1813,9 +1812,8 @@ def show_main_page():
 
                     st.write("")
 
-                    with st.expider_replacement if False else st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
+                    with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
                         
-                        # --- [산출물 파일 내용까지 분석하는 AI 피드백 버튼] ---
                         if st.button("AI 어시스턴트 분석 및 피드백 요청", key=f"ai_btn_{item['id']}", use_container_width=True):
                             with st.spinner("AI가 산출물 설명 및 첨부파일 코드를 분석하여 오류와 개선점을 진단하고 있습니다..."):
                                 target_file_url = item.get('file_url')
@@ -1870,8 +1868,8 @@ def show_main_page():
                                     st.rerun()
 
                     item_issues = item.get('issues', [])
-                    open_cnt = len([i for i in item_issues if i.get('status'] == '진행중'])
-                    done_cnt = len([i for i in item_issues if i.get('status'] == '완료'])
+                    open_cnt = len([i for i in item_issues if i.get('status') == '진행중'])
+                    done_cnt = len([i for i in item_issues if i.get('status') == '완료'])
                     with st.expander(f"이슈 ({len(item_issues)}건 · 진행중 {open_cnt} / 완료 {done_cnt})"):
                         if not item_issues:
                             st.caption("등록된 이슈가 없습니다.")
@@ -1929,14 +1927,12 @@ def show_main_page():
         st.markdown("### AI 어시스턴트 챗봇")
         st.caption("대학 행정 자동화, 파이썬 스크립트, 스프레드시트 연동 등에 관해 자유롭게 대화하고 도움을 받아보세요.")
         
-        # 채팅 내역 표시 컨테이너
         chat_container = st.container()
         with chat_container:
             for message in st.session_state['ai_chat_history']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["parts"][0])
 
-        # 사용자 입력 창
         if prompt := st.chat_input("AI 어시스턴트에게 무엇이든 물어보세요 (예: 파이썬으로 엑셀 자동화하는 코드 짜줘)"):
             st.session_state['ai_chat_history'].append({"role": "user", "parts": [prompt]})
             with st.chat_message("user"):
@@ -1946,7 +1942,6 @@ def show_main_page():
                 with st.spinner("AI가 답변을 생성하고 있습니다..."):
                     try:
                         chat_model = genai.GenerativeModel('gemini-flash-latest')
-                        # 대화 기록 전달
                         formatted_history = []
                         for msg in st.session_state['ai_chat_history'][:-1]:
                             formatted_history.append({"role": msg["role"], "parts": msg["parts"]})
