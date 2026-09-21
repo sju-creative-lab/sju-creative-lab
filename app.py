@@ -1140,7 +1140,7 @@ def show_survey_page():
         
     st.write("<br><br>", unsafe_allow_html=True)
     
-    _, bottom_logo_col, _ = st.columns([4, 1.5, 4])
+    _, bottom_logo_col, _ = st.columns()
     with bottom_logo_col:
         safe_show_logo(use_container_width=True)
 
@@ -1459,7 +1459,7 @@ def show_main_page():
             st.markdown(f"<div class='metric-card'><div class='label'>프로젝트 담당자</div><div class='value'>{unique_authors}</div><div class='sub'>참여 개발자 수</div></div>", unsafe_allow_html=True)
 
         st.write("<br>", unsafe_allow_html=True)
-        chart_col1, chart_col2 = st.columns([6, 4])
+        chart_col1, chart_col2 = st.columns()
         with chart_col1:
             with st.container(border=True):
                 st.markdown("##### 프로젝트 활동 현황")
