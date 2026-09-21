@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -15,9 +15,8 @@ import io
 import streamlit.components.v1 as components
 import google.generativeai as genai
 
-# API 키 설정 (테스트 시 하드코딩 후, 추후 Streamlit Secrets로 이동 권장)
-# 발급처: https://aistudio.google.com/
-genai.configure(api_key="여기에_GEMINI_API_키_입력")
+# Streamlit Secrets에서 API 키를 안전하게 불러오기
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def generate_ai_feedback(title, desc):
     try:
