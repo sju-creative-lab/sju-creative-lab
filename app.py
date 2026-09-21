@@ -1822,12 +1822,12 @@ def show_main_page():
                     with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
 
                         # --- [새로 추가되는 AI 피드백 요청 버튼] ---
-                        if st.button("✨ AI 어시스턴트에게 분석 및 피드백 요청하기", key=f"ai_btn_{item['id']}", use_container_width=True):
+                        if st.button("AI 어시스턴트 분석 및 피드백 요청", key=f"ai_btn_{item['id']}", use_container_width=True):
                             with st.spinner("AI가 산출물을 분석하여 맞춤형 피드백을 작성하고 있습니다..."):
                                 ai_reply = generate_ai_feedback(item['title'], item['desc'])
                                 if ai_reply:
                                     item['feedbacks'].append({
-                                        "user": "🤖 AI 어시스턴트",
+                                        "user": "AI 어시스턴트",
                                         "time": now_kst().strftime("%Y-%m-%d %H:%M"),
                                         "text": ai_reply
                                     })
@@ -1835,9 +1835,34 @@ def show_main_page():
                                     if st.session_state.get('last_save_status') != "fail":
                                         st.rerun()
 
-                        for fb in item['feedbacks']:
+                        for f_idx, fb in enumerate(item['feedbacks']):
                             fb_display_name = get_display_name(fb['user'])
-                            st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span>: {fb['text']}</div>", unsafe_allow_html=True)
+                            safe_text = str(fb['text']).replace('\n', '<br>')
+                            
+                            fb_col1, fb_col2 = st.columns([8.8, 1.2])
+                            with fb_col1:
+                                if fb['user'] == "AI 어시스턴트":
+                                    # Linear 스타일의 모던한 AI 피드백 렌더링
+                                    st.markdown(f"""
+                                        <div style='background-color:var(--card); border: 1px solid var(--border); padding:14px; border-radius:10px; margin-bottom:6px; box-shadow: var(--shadow-sm); border-top: 3px solid var(--foreground);'>
+                                            <div style='display:flex; align-items:center; gap:8px; margin-bottom:8px;'>
+                                                <div style='background-color:var(--foreground); color:var(--background); font-size:10px; font-weight:700; padding:3px 8px; border-radius:999px; letter-spacing:0.05em; font-family:var(--font-mono);'>AI ASSISTANT</div>
+                                                <span style='color:var(--muted-foreground); font-size:11px; font-family:var(--font-mono);'>{fb['time']}</span>
+                                            </div>
+                                            <div style='color:var(--foreground); font-size:13px; line-height:1.6;'>{safe_text}</div>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                                else:
+                                    # 일반 사용자 피드백 렌더링
+                                    st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span><div style='margin-top:4px; font-size:13px; line-height:1.5;'>{safe_text}</div></div>", unsafe_allow_html=True)
+                                    
+                            with fb_col2:
+                                if is_admin:
+                                    if st.button("삭제", key=f"del_fb_{item['id']}_{f_idx}", use_container_width=True):
+                                        item['feedbacks'].pop(f_idx)
+                                        save_data(st.session_state['app_data'])
+                                        if st.session_state.get('last_save_status') != "fail":
+                                            st.rerun()
 
                         with st.form(key=f"fb_form_{item['id']}", clear_on_submit=True):
                             fb_input = st.text_input("의견을 남겨주세요", placeholder="예: 좋은 아이디어네요! 이 부분은 이렇게 개선하면 어떨까요?")
