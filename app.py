@@ -106,6 +106,7 @@ def delete_from_gdrive(file_url):
 # ==========================================
 # 1. DB 연동 (GAS 웹앱 ↔ 구글 스프레드시트 ↔ 로컬 하이브리드)
 # ==========================================
+@st.cache_data(ttl=300, show_spinner=False)
 def load_data():
     local_data = {
         "users_db": {
@@ -265,9 +266,10 @@ def save_data(data):
             "timeline_log": data.get('timeline_log', [])
         }
 
-        res = requests.post(GAS_URL, json=payload, timeout=20)
+        res = requests.post(GAS_URL, json=payload, timeout=30)
         if res.status_code == 200 and res.json().get("success"):
             st.session_state['last_save_status'] = "success"
+            load_data.clear()  # 구글 시트 저장 성공 시 캐시 초기화
         else:
             st.session_state['last_save_status'] = "fail"
             st.session_state.setdefault('gsheets_debug_log', []).append(("error", f"시트 저장 실패: {res.text}"))
@@ -1404,7 +1406,10 @@ def show_main_page():
             padding: 0 !important;
             margin-bottom: 24px !important;
         }
-        div[data-testid="stRadio"] .st-emotion-cache-he5m1v {
+        /* 라디오 버튼 원형 아이콘 숨기기 강제 적용 */
+        div[data-testid="stRadio"] div[role="radio"] > div:first-child,
+        div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child,
+        div[data-testid="stRadio"] label > div:first-child {
             display: none !important;
         }
         div[data-testid="stRadio"] input[type="radio"] {
