@@ -1623,7 +1623,6 @@ def show_main_page():
             with chat_box:
                 for msg in st.session_state['ai_chat_history']:
                     # 이모지 제거를 위해 아바타 텍스트 적용
-                    avatar_val = "AI" if msg["role"] == "assistant" else "👤"
                     with st.chat_message(msg["role"], avatar=avatar_val):
                         st.markdown(msg["content"])
                         
@@ -1631,10 +1630,10 @@ def show_main_page():
                 st.session_state['ai_chat_history'].append({"role": "user", "content": chat_prompt})
                 
                 with chat_box:
-                    with st.chat_message("user", avatar="👤"):
+                    with st.chat_message("user"):
                         st.markdown(chat_prompt)
                         
-                    with st.chat_message("assistant", avatar="AI"):
+                    with st.chat_message("assistant"):
                         # 히스토리를 기반으로 메시지 배열 구성
                         messages = [{"role": "system", "content": "당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다."}]
                         for m in st.session_state['ai_chat_history']:
@@ -1900,7 +1899,7 @@ def show_main_page():
                         if st.button("AI 어시스턴트 분석 및 피드백 요청", key=f"ai_btn_{item['id']}", use_container_width=True):
                             placeholder = st.empty()
                             with placeholder.container():
-                                with st.chat_message("assistant", avatar="AI"):
+                                with st.chat_message("assistant"):
                                     target_file_url = item.get('file_url')
                                     if not target_file_url and item.get('files'):
                                         target_file_url = item['files'][0].get('file_url')
