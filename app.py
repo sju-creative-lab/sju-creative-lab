@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -13,6 +13,10 @@ import time
 import requests
 import io
 import json
+import csv
+import zipfile
+import re
+import xml.etree.ElementTree as ET
 import streamlit.components.v1 as components
 
 # ==========================================
@@ -64,51 +68,280 @@ def stream_nvidia_llm_messages(messages):
         yield f"NVIDIA API 호출 중 오류 발생: {e}"
 
 
-def get_file_text_content(file_url, filename=""):
+AI_EVIDENCE_LIMIT = 12000
+AI_MAX_REMOTE_BYTES = 20 * 1024 * 1024
+
+
+def _clip_text(value, limit=AI_EVIDENCE_LIMIT):
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...[분석 가능한 범위까지만 표시됨]"
+
+
+def _file_ext(filename):
+    return (os.path.splitext(str(filename or ""))[1] or "").lower()
+
+
+def _download_file_bytes(file_url):
+    """Google Drive 공유 링크를 포함해 원격 파일의 실제 바이트를 가져옵니다."""
+    if not file_url or not str(file_url).startswith("http"):
+        return None, "파일 URL이 없습니다."
     try:
-        if not file_url or not str(file_url).startswith("http"):
-            return ""
-        
-        # 엑셀, 워드, 이미지 등 텍스트로 읽을 수 없는 파일 확장자 사전 차단
-        binary_exts = ['.xlsx', '.xlsm', '.xls', '.docx', '.doc', '.ppt', '.pptx', '.pdf', '.zip', '.png', '.jpg', '.jpeg', '.gif']
-        if filename:
-            ext = '.' + filename.split('.')[-1].lower() if '.' in filename else ''
-            if ext in binary_exts:
-                return f"(첨부된 '{filename}' 파일은 문서/바이너리 형식이므로 텍스트 기반 코드 분석이 불가능합니다.)"
+        session = requests.Session()
+        response = session.get(file_url, timeout=20)
+        if response.status_code != 200:
+            return None, f"파일 다운로드 실패 (HTTP {response.status_code})"
 
-        r = requests.get(file_url, timeout=10)
-        if r.status_code == 200:
-            content = r.content
-            # 내용이 'PK' (ZIP/엑셀) 헤더로 시작하는지 한 번 더 방어
-            if content.startswith(b'PK\x03\x04'):
-                return "(엑셀 등 문서 파일이므로 텍스트 분석을 생략합니다.)"
-                
-            return content.decode('utf-8', errors='ignore')[:6000]
-    except Exception:
-        pass
-    return ""
+        # Google Drive의 바이러스 검사/대용량 다운로드 확인 페이지 처리
+        if "Virus scan warning" in response.text or 'id="download-form"' in response.text:
+            action_match = re.search(r'id="download-form"\s+action="([^"]+)"', response.text)
+            id_match = re.search(r'name="id"\s+value="([^"]+)"', response.text)
+            confirm_match = re.search(r'name="confirm"\s+value="([^"]+)"', response.text)
+            uuid_match = re.search(r'name="uuid"\s+value="([^"]+)"', response.text)
+            if action_match and id_match and confirm_match:
+                download_url = action_match.group(1)
+                if not download_url.startswith("http"):
+                    download_url = "https://drive.google.com" + download_url
+                params = {"id": id_match.group(1), "export": "download", "confirm": confirm_match.group(1)}
+                if uuid_match:
+                    params["uuid"] = uuid_match.group(1)
+                response = session.get(download_url, params=params, cookies=response.cookies, timeout=30)
+            else:
+                response = session.get(file_url + "&confirm=t", cookies=response.cookies, timeout=30)
+
+        content = response.content
+        if len(content) > AI_MAX_REMOTE_BYTES:
+            return None, f"파일이 너무 큽니다. AI 분석은 {AI_MAX_REMOTE_BYTES // (1024 * 1024)}MB 이하만 지원합니다."
+        return content, ""
+    except Exception as exc:
+        return None, f"파일을 읽는 중 오류가 발생했습니다: {type(exc).__name__}"
 
 
-def generate_ai_feedback_stream(title, desc, file_url=None, filename=""):
-    file_content = ""
-    if file_url:
-        file_content = get_file_text_content(file_url, filename)
-        
-    system_p = "당신은 대학 행정 및 교육 혁신을 지원하는 전문 'AI 시니어 엔지니어 및 행정 자동화 컨설턴트'입니다."
-    user_p = f"""
-    다음은 교직원이 자동화를 위해 기획/개발한 프로토타입 산출물입니다. 이 산출물을 면밀히 분석해 주세요.
+def _xml_text_from_zip(zf, member_names):
+    texts = []
+    for member in member_names:
+        try:
+            root = ET.fromstring(zf.read(member))
+            for elem in root.iter():
+                if elem.tag.endswith('}t') and elem.text:
+                    texts.append(elem.text)
+        except Exception:
+            continue
+    return "\n".join(texts)
 
-    1. 제공된 설명과 소스코드(파일 내용)를 바탕으로 잠재적인 오류, 예외 처리 누락, 버그 또는 행정적 모순이 있는지 진단해 주세요.
-    2. 실무 적용 시 보완해야 할 기술적/행정적 개선점(예외처리, 보안, UI/UX 등)을 명확하게 3~4문장으로 요약해 주세요.
 
-    - 프로젝트명: {title}
-    - 설명: {desc}
-    - 첨부 파일 소스코드/내용 일부:
-    {file_content if file_content else "(첨부된 텍스트 소스코드가 없거나 읽을 수 없는 파일 형식)"}
-    """
-    
+def _json_structure(value, path="$", depth=0, max_depth=4):
+    if depth > max_depth:
+        return {"path": path, "type": type(value).__name__, "note": "중첩 구조가 깊어 여기까지 확인"}
+    if isinstance(value, dict):
+        return {
+            "path": path,
+            "type": "object",
+            "keys": list(value.keys())[:50],
+            "children": [_json_structure(v, f"{path}.{k}", depth + 1, max_depth) for k, v in list(value.items())[:20]]
+        }
+    if isinstance(value, list):
+        return {
+            "path": path,
+            "type": "array",
+            "length": len(value),
+            "item_structure": _json_structure(value[0], f"{path}[0]", depth + 1, max_depth) if value else None
+        }
+    return {"path": path, "type": type(value).__name__}
+
+
+def analyze_file_bytes(file_bytes, filename="", mime_type=""):
+    """코드 여부와 무관하게 파일 형식, 구조, 확인 가능한 내용을 추출합니다."""
+    ext = _file_ext(filename)
+    size = len(file_bytes or b"")
+    facts = [f"파일명: {filename or '이름 없음'}", f"확장자: {ext or '없음'}", f"크기: {size:,} bytes"]
+    if mime_type:
+        facts.append(f"MIME 타입: {mime_type}")
+
+    evidence = []
+    structure = ""
+    warnings = []
+
+    try:
+        if ext in [".csv", ".tsv"]:
+            raw = file_bytes.decode("utf-8-sig", errors="replace")
+            sample = raw[:4096]
+            delimiter = "\t" if ext == ".tsv" else ","
+            if ext == ".csv":
+                try:
+                    delimiter = csv.Sniffer().sniff(sample).delimiter
+                except Exception:
+                    pass
+            df = pd.read_csv(io.BytesIO(file_bytes), sep=delimiter, engine="python")
+            facts.extend([f"행 수: {len(df):,}", f"열 수: {len(df.columns):,}", f"구분자: {repr(delimiter)}"])
+            structure = "열 목록: " + ", ".join(map(str, df.columns.tolist()))
+            structure += "\n자료형: " + ", ".join(f"{c}={t}" for c, t in df.dtypes.items())
+            nulls = df.isna().sum()
+            nonzero_nulls = [f"{c}={int(v)}" for c, v in nulls.items() if v]
+            if nonzero_nulls:
+                structure += "\n결측치: " + ", ".join(nonzero_nulls[:30])
+            evidence.append("앞부분 샘플:\n" + df.head(8).to_string(index=False))
+
+        elif ext in [".xlsx", ".xlsm", ".xls"]:
+            excel = pd.ExcelFile(io.BytesIO(file_bytes))
+            facts.append(f"시트 수: {len(excel.sheet_names):,}")
+            facts.append("시트명: " + ", ".join(excel.sheet_names))
+            sheet_parts = []
+            for sheet in excel.sheet_names[:20]:
+                sheet_df = pd.read_excel(excel, sheet_name=sheet)
+                sheet_parts.append(
+                    f"[시트: {sheet}] 행={len(sheet_df):,}, 열={len(sheet_df.columns):,}\n"
+                    f"열 목록: {', '.join(map(str, sheet_df.columns.tolist()))}\n"
+                    f"샘플:\n{sheet_df.head(5).to_string(index=False)}"
+                )
+            evidence.append("\n\n".join(sheet_parts))
+            structure = "엑셀 통합문서이며 시트별 표 구조를 확인했습니다."
+
+        elif ext == ".json":
+            raw = file_bytes.decode("utf-8-sig", errors="replace")
+            parsed = json.loads(raw)
+            structure_obj = _json_structure(parsed)
+            facts.append(f"최상위 자료형: {type(parsed).__name__}")
+            if isinstance(parsed, dict):
+                facts.append(f"최상위 키 수: {len(parsed):,}")
+            elif isinstance(parsed, list):
+                facts.append(f"최상위 배열 길이: {len(parsed):,}")
+            structure = "JSON 구조:\n" + json.dumps(structure_obj, ensure_ascii=False, indent=2)
+            evidence.append("일부 데이터:\n" + json.dumps(parsed, ensure_ascii=False, indent=2, default=str)[:7000])
+
+        elif ext in [".docx", ".pptx"]:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                names = zf.namelist()
+                if ext == ".docx":
+                    parts = [n for n in names if n == "word/document.xml"]
+                    label = "Word 문서"
+                else:
+                    parts = sorted(n for n in names if n.startswith("ppt/slides/slide") and n.endswith(".xml"))
+                    label = "PowerPoint 프레젠테이션"
+                extracted = _xml_text_from_zip(zf, parts)
+                facts.append(f"{label} 내부 XML 구조 확인")
+                facts.append(f"텍스트 추출 길이: {len(extracted):,}자")
+                structure = f"{label}이며 ZIP/XML 기반 문서 구조입니다."
+                evidence.append("추출 가능한 텍스트:\n" + (extracted or "텍스트를 추출하지 못했습니다."))
+
+        elif ext == ".pdf":
+            extracted = ""
+            page_count = None
+            pdf_reader = None
+            try:
+                from pypdf import PdfReader
+                pdf_reader = PdfReader(io.BytesIO(file_bytes))
+            except Exception:
+                try:
+                    from PyPDF2 import PdfReader
+                    pdf_reader = PdfReader(io.BytesIO(file_bytes))
+                except Exception:
+                    pass
+            if pdf_reader is not None:
+                page_count = len(pdf_reader.pages)
+                extracted = "\n".join((p.extract_text() or "") for p in pdf_reader.pages[:20])
+                facts.append(f"페이지 수: {page_count:,}")
+                structure = "PDF 문서이며 페이지 단위 텍스트 구조를 확인했습니다."
+                evidence.append("추출 가능한 텍스트:\n" + (extracted or "텍스트를 추출하지 못했습니다."))
+            else:
+                structure = "PDF 파일이지만 현재 실행 환경에서 페이지 텍스트 추출 모듈을 사용할 수 없습니다."
+                warnings.append("PDF 내용은 확인하지 못했으므로 내용에 대한 판단을 하지 않습니다.")
+
+        elif ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]:
+            try:
+                from PIL import Image
+                image = Image.open(io.BytesIO(file_bytes))
+                facts.extend([f"이미지 형식: {image.format}", f"해상도: {image.width} x {image.height}", f"색상 모드: {image.mode}"])
+                structure = "이미지 파일이며 픽셀·해상도·색상 메타데이터를 확인했습니다."
+                warnings.append("이미지 안의 글자나 시각적 의미는 별도 OCR/비전 분석 없이는 단정하지 않습니다.")
+            except Exception:
+                structure = "이미지 파일로 식별했지만 이미지 메타데이터를 읽지 못했습니다."
+
+        else:
+            text = file_bytes.decode("utf-8-sig", errors="replace")
+            lines = text.splitlines()
+            facts.extend([f"문자 수: {len(text):,}", f"줄 수: {len(lines):,}"])
+            structure = f"일반 텍스트 파일이며 줄 단위 내용 구조를 확인했습니다."
+            evidence.append(text)
+            if not text.strip():
+                warnings.append("텍스트 내용이 비어 있어 내용 분석을 하지 않습니다.")
+
+    except Exception as exc:
+        warnings.append(f"파일 구조를 읽는 중 {type(exc).__name__} 오류가 발생했습니다.")
+        structure = "파일 형식은 확장자와 기본 메타데이터까지만 확인했습니다."
+
+    report = "[확인된 파일 정보]\n- " + "\n- ".join(facts)
+    report += "\n\n[확인된 구조]\n" + (structure or "구조를 확인하지 못했습니다.")
+    if warnings:
+        report += "\n\n[분석 한계]\n- " + "\n- ".join(warnings)
+    if evidence:
+        report += "\n\n[확인된 내용 일부]\n" + "\n\n".join(evidence)
+    return _clip_text(report)
+
+
+def get_file_text_content(file_url, filename=""):
+    file_bytes, error = _download_file_bytes(file_url)
+    if not file_bytes:
+        return f"[파일 읽기 결과]\n{error}"
+    return analyze_file_bytes(file_bytes, filename)
+
+
+def _build_ai_guardrail_system(role_description):
+    return f"""{role_description}
+반드시 다음 원칙을 지키세요.
+- 입력에 실제로 포함된 정보와 확인 가능한 파일 구조만 근거로 답합니다.
+- 파일을 읽지 못했거나 정보가 부족한 부분은 '확인 불가'라고 표시합니다.
+- 파일 형식만 보고 내용이나 오류를 추측하지 않습니다.
+- 코드가 아닌 표, JSON, 문서, 프레젠테이션, 이미지도 먼저 형식과 구조를 설명한 뒤 분석합니다.
+- 사용자가 한눈에 이해하도록 제목, 핵심 요약, 우선순위, 근거, 확인 필요 사항을 Markdown으로 구분합니다."""
+
+
+def generate_ai_feedback_stream(title, desc, file_url=None, filename="", files=None):
+    file_evidence = []
+    source_files = files or ([{"file_url": file_url, "filename": filename}] if file_url else [])
+    for file_info in source_files[:10]:
+        current_url = file_info.get("file_url")
+        current_name = file_info.get("filename", "")
+        if current_url:
+            file_evidence.append(f"### {current_name}\n{get_file_text_content(current_url, current_name)}")
+        elif file_info.get("file_data"):
+            file_evidence.append(f"### {current_name}\n{analyze_file_bytes(file_info['file_data'], current_name)}")
+    evidence_text = "\n\n".join(file_evidence) or "첨부 파일을 읽을 수 있는 근거가 없습니다. 파일 내용에 대해서는 판단하지 마세요."
+
+    user_p = f"""다음 산출물을 사실 기반으로 분석해 주세요.
+
+## 산출물 정보
+- 프로젝트명: {title}
+- 설명: {desc or '(설명 없음)'}
+
+## 파일별 확인 결과
+{_clip_text(evidence_text, 30000)}
+
+## 답변 형식
+### 한눈에 보는 결론
+- 상태: 확인된 내용만으로 '양호', '보완 필요', '판단 보류' 중 하나를 선택
+- 핵심 요약: 2~3줄
+
+### 파일 구조와 확인 범위
+- 파일 형식과 내부 구조
+- 실제로 확인한 데이터/내용
+- 읽지 못한 범위가 있다면 명시
+
+### 주요 발견
+- 근거가 있는 항목만 작성
+
+### 우선순위별 개선 제안
+1. 즉시 확인/수정
+2. 다음 개선
+3. 운영 시 점검
+
+### 확인이 필요한 사항
+- 파일에서 확인되지 않아 결론을 낼 수 없는 사항
+
+각 항목은 짧은 문장과 bullet로 작성하고, 추측성 표현은 결론처럼 쓰지 마세요."""
     messages = [
-        {"role": "system", "content": system_p},
+        {"role": "system", "content": _build_ai_guardrail_system("당신은 대학 행정 및 교육 혁신을 지원하는 전문 AI 시니어 엔지니어이자 행정 자동화 컨설턴트입니다.")},
         {"role": "user", "content": user_p}
     ]
     return stream_nvidia_llm_messages(messages)
@@ -1630,33 +1863,63 @@ def show_main_page():
         # --- [실험실 상단 플로팅 팝오버 형태의 AI 어시스턴트 챗봇] ---
         with st.popover("AI 어시스턴트에게 무엇이든 물어보기", use_container_width=True):
             st.markdown("##### AI 실시간 어시스턴트")
-            st.caption("행정 자동화, 코드 작성, 기획 관련 궁금증을 편하게 대화해 보세요.")
-            
+            st.caption("질문과 함께 파일을 첨부하면 파일 형식·내부 구조·확인 가능한 내용까지 근거를 표시해 답변합니다.")
+
+            chat_file = st.file_uploader(
+                "분석할 파일 첨부 (선택)",
+                accept_multiple_files=False,
+                key="floating_chat_file",
+                help="CSV, Excel, JSON, TXT, PDF, Word, PowerPoint, 이미지 등. 읽지 못한 내용은 추측하지 않습니다."
+            )
+            if chat_file:
+                st.caption(f"첨부됨: {chat_file.name} · {len(chat_file.getvalue()):,} bytes")
+
             chat_box = st.container(height=300)
             with chat_box:
                 for msg in st.session_state['ai_chat_history']:
                     with st.chat_message(msg["role"]):
-                        st.markdown(msg["content"])
-                        
+                        st.markdown(msg.get("display", msg["content"]))
+
             if chat_prompt := st.chat_input("질문을 입력하세요...", key="floating_chat_input"):
-                st.session_state['ai_chat_history'].append({"role": "user", "content": chat_prompt})
-                
+                question = chat_prompt.strip()
+                evidence = ""
+                attachment_label = ""
+                if chat_file:
+                    attachment_label = f"첨부파일: `{chat_file.name}`"
+                    evidence = analyze_file_bytes(chat_file.getvalue(), chat_file.name, chat_file.type)
+                elif not question:
+                    question = "첨부 파일을 분석해 주세요."
+
+                display_user = question + (f"\n\n{attachment_label}" if attachment_label else "")
+                payload_user = question
+                if evidence:
+                    payload_user += f"\n\n[첨부파일의 확인된 분석 결과]\n{evidence}"
+                elif chat_file:
+                    payload_user += "\n\n[첨부파일 분석 결과]\n파일을 읽지 못했습니다. 확인되지 않은 내용은 추측하지 마세요."
+
+                st.session_state['ai_chat_history'].append({
+                    "role": "user",
+                    "content": payload_user,
+                    "display": display_user,
+                    "payload": payload_user
+                })
+
                 with chat_box:
                     with st.chat_message("user"):
-                        st.markdown(chat_prompt)
-                        
+                        st.markdown(display_user)
+
                     with st.chat_message("assistant"):
-                        # 히스토리를 기반으로 메시지 배열 구성
-                        messages = [{"role": "system", "content": "당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다."}]
+                        messages = [{
+                            "role": "system",
+                            "content": _build_ai_guardrail_system("당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다.")
+                        }]
                         for m in st.session_state['ai_chat_history']:
                             if m["role"] in ["user", "assistant"]:
-                                messages.append({"role": m["role"], "content": m["content"]})
-                        
-                        # 스트리밍 효과 적용 (Typewriter Effect)
-                        stream_gen = stream_nvidia_llm_messages(messages)
-                        bot_ans = st.write_stream(stream_gen)
-                
-                st.session_state['ai_chat_history'].append({"role": "assistant", "content": bot_ans})
+                                messages.append({"role": m["role"], "content": m.get("payload", m["content"])})
+
+                        bot_ans = st.write_stream(stream_nvidia_llm_messages(messages))
+
+                st.session_state['ai_chat_history'].append({"role": "assistant", "content": bot_ans, "payload": bot_ans})
                 st.rerun()
 
         st.write("<br>", unsafe_allow_html=True)
@@ -1912,16 +2175,22 @@ def show_main_page():
                             placeholder = st.empty()
                             with placeholder.container():
                                 with st.chat_message("assistant"):
-                                    target_file_url = item.get('file_url')
-                                    target_filename = item.get('filename', '')
-                                    if not target_file_url and item.get('files'):
-                                        target_file_url = item['files'][0].get('file_url')
-                                        target_filename = item['files'][0].get('filename', '')
-                                    
-                                    # 스트리밍 효과 적용
-                                    stream_gen = generate_ai_feedback_stream(item['title'], item['desc'], target_file_url, target_filename)
+                                    analysis_files = item.get('files', [])
+                                    if not analysis_files and item.get('filename'):
+                                        analysis_files = [{
+                                            "filename": item.get('filename', ''),
+                                            "file_url": item.get('file_url'),
+                                            "file_data": item.get('file_data', b"")
+                                        }]
+
+                                    st.caption("파일 형식과 내부 구조를 먼저 확인한 뒤, 근거가 있는 내용만 분석합니다.")
+                                    stream_gen = generate_ai_feedback_stream(
+                                        item['title'],
+                                        item['desc'],
+                                        files=analysis_files
+                                    )
                                     ai_reply = st.write_stream(stream_gen)
-                                
+
                             if ai_reply:
                                 item['feedbacks'].append({
                                     "user": "AI 어시스턴트",
@@ -1935,19 +2204,15 @@ def show_main_page():
                         for f_idx, fb in enumerate(item['feedbacks']):
                             fb_display_name = get_display_name(fb['user'])
                             safe_text = str(fb['text']).replace('\n', '<br>')
-                            
+
                             fb_col1, fb_col2 = st.columns([8.8, 1.2])
                             with fb_col1:
                                 if fb['user'] == "AI 어시스턴트":
-                                    st.markdown(f"""
-                                        <div style='background-color:var(--card); border: 1px solid var(--border); padding:14px; border-radius:10px; margin-bottom:6px; box-shadow: var(--shadow-sm); border-top: 3px solid var(--foreground);'>
-                                            <div style='display:flex; align-items:center; gap:8px; margin-bottom:8px;'>
-                                                <div style='background-color:var(--foreground); color:var(--background); font-size:10px; font-weight:700; padding:3px 8px; border-radius:999px; letter-spacing:0.05em; font-family:var(--font-mono);'>AI ASSISTANT</div>
-                                                <span style='color:var(--muted-foreground); font-size:11px; font-family:var(--font-mono);'>{fb['time']}</span>
-                                            </div>
-                                            <div style='color:var(--foreground); font-size:13px; line-height:1.6;'>{safe_text}</div>
-                                        </div>
-                                    """, unsafe_allow_html=True)
+                                    with st.container(border=True):
+                                        st.markdown(
+                                            f"**AI ASSISTANT**  ·  `{fb['time']}`\n\n"
+                                            f"{fb['text']}"
+                                        )
                                 else:
                                     st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span><div style='margin-top:4px; font-size:13px; line-height:1.5;'>{safe_text}</div></div>", unsafe_allow_html=True)
                                     
