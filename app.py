@@ -2135,19 +2135,10 @@ def show_main_page():
             st.markdown("##### AI 실시간 어시스턴트")
             st.caption("질문과 함께 파일을 첨부하면 파일 형식·내부 구조·확인 가능한 내용까지 근거를 표시해 답변합니다.")
 
-            new_question_col, privacy_state_col = st.columns([1.3, 2.7])
-            with new_question_col:
-                if st.button("새 질문", key="new_ai_question", use_container_width=True):
-                    st.session_state['ai_chat_history'] = [
-                        {"role": "assistant", "content": "안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."}
-                    ]
-                    st.session_state.pop("floating_chat_file", None)
-                    st.rerun()
-            with privacy_state_col:
-                if ai_privacy_ack:
-                    st.caption("개인정보 보호 안내 확인 완료 · 민감정보는 자동 마스킹됩니다.")
-                else:
-                    st.warning("먼저 개인정보 보호 안내를 확인해 주세요.")
+            if ai_privacy_ack:
+                st.caption("개인정보 보호 안내 확인 완료 · 민감정보는 자동 마스킹됩니다.")
+            else:
+                st.warning("먼저 개인정보 보호 안내를 확인해 주세요.")
 
             chat_file = st.file_uploader(
                 "분석할 파일 첨부 (선택)",
@@ -2164,11 +2155,30 @@ def show_main_page():
                     with st.chat_message(msg["role"]):
                         st.markdown(msg.get("display", msg["content"]))
 
-            if chat_prompt := st.chat_input(
-                "질문을 입력하세요...",
-                key="floating_chat_input",
-                disabled=not ai_privacy_ack
-            ):
+            chat_input_col, new_question_col = st.columns([8.8, 1.2], gap="small")
+            with chat_input_col:
+                chat_prompt = st.chat_input(
+                    "질문을 입력하세요...",
+                    key="floating_chat_input",
+                    disabled=not ai_privacy_ack
+                )
+            with new_question_col:
+                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                new_question_clicked = st.button(
+                    "새 질문",
+                    key="new_ai_question_bottom",
+                    use_container_width=True,
+                    disabled=not ai_privacy_ack
+                )
+
+            if new_question_clicked:
+                st.session_state['ai_chat_history'] = [
+                    {"role": "assistant", "content": "안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."}
+                ]
+                st.session_state.pop("floating_chat_file", None)
+                st.rerun()
+
+            if chat_prompt:
                 question = chat_prompt.strip()
                 evidence = ""
                 attachment_label = ""
