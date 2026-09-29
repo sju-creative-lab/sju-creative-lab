@@ -37,9 +37,10 @@ def stream_nvidia_llm_messages(messages):
         "Accept": "text/event-stream"
     }
     
+    safe_messages, _detected_sensitive_types = sanitize_messages_for_external_ai(messages)
     payload = {
         "model": "meta/llama-3.2-11b-vision-instruct",
-        "messages": messages,
+        "messages": safe_messages,
         "stream": True,
         "max_tokens": 1024,
         "temperature": 0.5
@@ -90,6 +91,47 @@ def _clip_text(value, limit=AI_EVIDENCE_LIMIT):
     if len(text) <= limit:
         return text
     return text[:limit] + "\n...[분석 가능한 범위까지만 표시됨]"
+
+
+SENSITIVE_AI_PATTERNS = [
+    ("주민등록번호", re.compile(r"\b\d{6}[- ]?\d{7}\b")),
+    ("전화번호", re.compile(r"(?<!\d)01[016789][- ]?\d{3,4}[- ]?\d{4}(?!\d)")),
+    ("이메일", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+    ("카드번호", re.compile(r"(?<!\d)\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?!\d)")),
+    ("개인식별번호", re.compile(r"(?i)(학번|사번|계좌번호|주소)\s*[:=]\s*[^\n,;]+")),
+    ("비밀키", re.compile(r"-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----")),
+    ("인증정보", re.compile(r"(?i)(api[_-]?key|access[_-]?token|secret[_-]?key|password|passwd|비밀번호|토큰)\s*[:=]\s*[^\s,;]+")),
+]
+
+
+def sanitize_sensitive_text(text):
+    """외부 AI 전송 직전에 민감정보를 마스킹합니다. 원문은 반환하지 않습니다."""
+    safe_text = str(text or "")
+    detected = []
+    for label, pattern in SENSITIVE_AI_PATTERNS:
+        if pattern.search(safe_text):
+            detected.append(label)
+            if label == "인증정보":
+                safe_text = pattern.sub(lambda match: f"{match.group(1)}: [외부전송차단]", safe_text)
+            elif label == "개인식별번호":
+                safe_text = pattern.sub(lambda match: f"{match.group(1)}: [개인정보마스킹]", safe_text)
+            else:
+                safe_text = pattern.sub("[민감정보마스킹]", safe_text)
+    return safe_text, sorted(set(detected))
+
+
+def sanitize_messages_for_external_ai(messages):
+    """대화 이력 전체를 방어적으로 재검사한 뒤 NVIDIA API에 전달합니다."""
+    safe_messages = []
+    detected = []
+    for message in messages:
+        copied = dict(message)
+        content = copied.get("content")
+        if isinstance(content, str) and copied.get("role") != "system":
+            copied["content"], found = sanitize_sensitive_text(content)
+            detected.extend(found)
+        safe_messages.append(copied)
+    return safe_messages, sorted(set(detected))
 
 
 def _file_ext(filename):
@@ -449,6 +491,57 @@ def _build_ai_guardrail_system(role_description):
 - 파일 형식만 보고 내용이나 오류를 추측하지 않습니다.
 - 코드가 아닌 표, JSON, 문서, 프레젠테이션, 이미지도 먼저 형식과 구조를 설명한 뒤 분석합니다.
 - 사용자가 한눈에 이해하도록 제목, 핵심 요약, 우선순위, 근거, 확인 필요 사항을 Markdown으로 구분합니다."""
+
+
+def _split_ai_feedback_sections(text):
+    """AI Markdown 답변을 제목별 섹션으로 나눠 UI에서 접어 표시합니다."""
+    raw = str(text or "").strip()
+    matches = list(re.finditer(r"(?m)^#{2,4}\s+(.+?)\s*$", raw))
+    if not matches:
+        if not raw:
+            return []
+        return [("한눈에 보는 결론", _clip_text(raw, 900)), ("전체 분석 내용", raw)]
+
+    sections = []
+    first_body = raw[:matches[0].start()].strip()
+    if first_body:
+        sections.append(("요약", first_body))
+    for idx, match in enumerate(matches):
+        title = match.group(1).strip().replace("**", "")
+        body_start = match.end()
+        body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw)
+        body = raw[body_start:body_end].strip()
+        sections.append((title, body))
+    return sections
+
+
+def render_ai_feedback_card(feedback_text, feedback_time):
+    """AI 피드백은 요약을 먼저 보여주고 세부 내용은 섹션별 expander로 표시합니다."""
+    sections = _split_ai_feedback_sections(feedback_text)
+    if not sections:
+        return
+
+    summary_index = next((i for i, (title, _) in enumerate(sections) if "한눈에" in title or title == "요약"), 0)
+    summary_title, summary_body = sections[summary_index]
+
+    with st.container(border=True):
+        st.markdown(
+            f"<div style='display:flex; align-items:center; gap:8px; margin-bottom:8px;'>"
+            f"<span style='background-color:var(--foreground); color:var(--background); font-size:10px; font-weight:700; padding:3px 8px; border-radius:999px; letter-spacing:0.05em; font-family:var(--font-mono);'>AI ASSISTANT</span>"
+            f"<span style='color:var(--muted-foreground); font-size:11px; font-family:var(--font-mono);'>{feedback_time}</span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown("#### 한눈에 보는 결론")
+        st.markdown(_clip_text(summary_body, 900))
+
+        detail_sections = [section for i, section in enumerate(sections) if i != summary_index and section[1].strip()]
+        if detail_sections:
+            st.caption(f"세부 분석 {len(detail_sections)}개 항목 · 필요한 항목을 눌러 확인하세요.")
+            for title, body in detail_sections:
+                expanded = "주요 발견" in title
+                with st.expander(title, expanded=expanded):
+                    st.markdown(body)
 
 
 def generate_ai_feedback_stream(title, desc, file_url=None, filename="", files=None):
@@ -1785,10 +1878,32 @@ def render_department_timeline():
         st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 일습니다. 실험실 목록에서 산출물을 '완료 처리'해 보세요.")
 
 
+def render_ai_privacy_notice():
+    """외부 AI 전송 전 사용자에게 데이터 처리 범위와 주의사항을 안내합니다."""
+    expanded = not bool(st.session_state.get("ai_privacy_ack", False))
+    with st.expander("AI 기능 사용 전 개인정보 보호 안내", expanded=expanded):
+        st.warning(
+            "이 기능은 입력 내용과 파일에서 추출한 분석 결과를 외부 NVIDIA AI API로 전송하여 답변을 생성합니다."
+        )
+        st.markdown(
+            "- 주민등록번호, 연락처, 이메일, 계좌번호, 비밀번호, API 키 등 민감정보는 입력하지 마세요.\n"
+            "- 시스템은 일부 개인정보와 인증정보를 자동으로 마스킹한 뒤 전송합니다.\n"
+            "- 자동 탐지가 모든 민감정보를 찾아낸다고 보장할 수 있으므로, 원본 파일을 직접 확인한 후 사용하세요.\n"
+            "- 민감정보가 포함된 파일은 먼저 비식별화하거나 외부 AI 사용을 중단하세요."
+        )
+        st.caption("일반적인 기획, 구조, 오류 분석에는 사용할 수 있지만 기밀 원문 전송은 권장하지 않습니다.")
+        st.checkbox(
+            "위 안내를 읽었으며, 외부 AI 전송 범위를 이해했습니다.",
+            key="ai_privacy_ack"
+        )
+    return bool(st.session_state.get("ai_privacy_ack", False))
+
+
 # ==========================================
 # 5. 메인 대시보드 화면
 # ==========================================
 def show_main_page():
+
     current_user_id = st.session_state.get('user_id', '')
     users_db = st.session_state['app_data'].get('users_db', {})
     uinfo = users_db.get(current_user_id, {})
@@ -2013,11 +2128,26 @@ def show_main_page():
     elif selected_tab == "실험실":
         st.markdown("### 실험실")
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
+        ai_privacy_ack = render_ai_privacy_notice()
 
         # --- [실험실 상단 플로팅 팝오버 형태의 AI 어시스턴트 챗봇] ---
         with st.popover("AI 어시스턴트에게 무엇이든 물어보기", use_container_width=True):
             st.markdown("##### AI 실시간 어시스턴트")
             st.caption("질문과 함께 파일을 첨부하면 파일 형식·내부 구조·확인 가능한 내용까지 근거를 표시해 답변합니다.")
+
+            new_question_col, privacy_state_col = st.columns([1.3, 2.7])
+            with new_question_col:
+                if st.button("새 질문", key="new_ai_question", use_container_width=True):
+                    st.session_state['ai_chat_history'] = [
+                        {"role": "assistant", "content": "안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."}
+                    ]
+                    st.session_state.pop("floating_chat_file", None)
+                    st.rerun()
+            with privacy_state_col:
+                if ai_privacy_ack:
+                    st.caption("개인정보 보호 안내 확인 완료 · 민감정보는 자동 마스킹됩니다.")
+                else:
+                    st.warning("먼저 개인정보 보호 안내를 확인해 주세요.")
 
             chat_file = st.file_uploader(
                 "분석할 파일 첨부 (선택)",
@@ -2034,7 +2164,11 @@ def show_main_page():
                     with st.chat_message(msg["role"]):
                         st.markdown(msg.get("display", msg["content"]))
 
-            if chat_prompt := st.chat_input("질문을 입력하세요...", key="floating_chat_input"):
+            if chat_prompt := st.chat_input(
+                "질문을 입력하세요...",
+                key="floating_chat_input",
+                disabled=not ai_privacy_ack
+            ):
                 question = chat_prompt.strip()
                 evidence = ""
                 attachment_label = ""
@@ -2044,10 +2178,19 @@ def show_main_page():
                 elif not question:
                     question = "첨부 파일을 분석해 주세요."
 
+                safe_question, question_findings = sanitize_sensitive_text(question)
+                safe_evidence, evidence_findings = sanitize_sensitive_text(evidence)
+                detected_findings = sorted(set(question_findings + evidence_findings))
+                if detected_findings:
+                    st.warning(
+                        "민감정보가 감지되어 외부 AI 전송 전에 자동 마스킹했습니다: "
+                        + ", ".join(detected_findings)
+                    )
+
                 display_user = question + (f"\n\n{attachment_label}" if attachment_label else "")
-                payload_user = question
-                if evidence:
-                    payload_user += f"\n\n[첨부파일의 확인된 분석 결과]\n{evidence}"
+                payload_user = safe_question
+                if safe_evidence:
+                    payload_user += f"\n\n[첨부파일의 확인된 분석 결과]\n{safe_evidence}"
                 elif chat_file:
                     payload_user += "\n\n[첨부파일 분석 결과]\n파일을 읽지 못했습니다. 확인되지 않은 내용은 추측하지 마세요."
 
@@ -2329,9 +2472,17 @@ def show_main_page():
 
                     with st.expander(f"피드백 및 토론 ({len(item['feedbacks'])}건)"):
                         
-                        if st.button("AI 어시스턴트 분석 및 피드백 요청", key=f"ai_btn_{item['id']}", use_container_width=True):
+                        if not ai_privacy_ack:
+                            st.caption("AI 분석을 사용하려면 위의 개인정보 보호 안내를 먼저 확인해 주세요.")
+                        if st.button(
+                            "AI 어시스턴트 분석 및 피드백 요청",
+                            key=f"ai_btn_{item['id']}",
+                            use_container_width=True,
+                            disabled=not ai_privacy_ack
+                        ):
                             placeholder = st.empty()
                             with placeholder.container():
+                                st.info("AI 어시스턴트가 업로드된 파일의 형식과 내용을 분석하여 답변을 생성하고 있습니다. 잠시만 기다려 주세요.")
                                 with st.chat_message("assistant"):
                                     analysis_files = item.get('files', [])
                                     if not analysis_files and item.get('filename'):
@@ -2366,11 +2517,7 @@ def show_main_page():
                             fb_col1, fb_col2 = st.columns([8.8, 1.2])
                             with fb_col1:
                                 if fb['user'] == "AI 어시스턴트":
-                                    with st.container(border=True):
-                                        st.markdown(
-                                            f"**AI ASSISTANT**  ·  `{fb['time']}`\n\n"
-                                            f"{fb['text']}"
-                                        )
+                                    render_ai_feedback_card(fb['text'], fb['time'])
                                 else:
                                     st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span><div style='margin-top:4px; font-size:13px; line-height:1.5;'>{safe_text}</div></div>", unsafe_allow_html=True)
                                     
