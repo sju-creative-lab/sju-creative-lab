@@ -45,30 +45,43 @@ def stream_nvidia_llm_messages(messages):
         "temperature": 0.5
     }
     
-    try:
-        response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, stream=True, timeout=30)
-        if response.status_code == 200:
-            for line in response.iter_lines():
-                if line:
-                    decoded_line = line.decode('utf-8')
-                    if decoded_line.startswith("data: "):
-                        data_str = decoded_line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            data_json = json.loads(data_str)
-                            chunk = data_json["choices"][0]["delta"].get("content", "")
-                            if chunk:
-                                yield chunk
-                        except:
-                            pass
-        else:
-            yield f"NVIDIA API 통신 에러 (코드 {response.status_code}): {response.text}"
-    except Exception as e:
-        yield f"NVIDIA API 호출 중 오류 발생: {e}"
+    last_error = "알 수 없는 오류"
+    for attempt in range(3):
+        try:
+            response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, stream=True, timeout=60)
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        decoded_line = line.decode('utf-8')
+                        if decoded_line.startswith("data: "):
+                            data_str = decoded_line[6:]
+                            if data_str.strip() == "[DONE]":
+                                break
+                            try:
+                                data_json = json.loads(data_str)
+                                chunk = data_json["choices"][0]["delta"].get("content", "")
+                                if chunk:
+                                    yield chunk
+                            except Exception:
+                                pass
+                return
+
+            last_error = f"NVIDIA API 통신 에러 (코드 {response.status_code}): {response.text}"
+            if response.status_code < 500 or attempt == 2:
+                yield last_error
+                return
+            time.sleep(1.5 * (attempt + 1))
+        except Exception as exc:
+            last_error = f"NVIDIA API 호출 중 오류 발생: {type(exc).__name__}: {exc}"
+            if attempt == 2:
+                yield last_error
+                return
+            time.sleep(1.5 * (attempt + 1))
 
 
 AI_EVIDENCE_LIMIT = 12000
+AI_CHAT_HISTORY_LIMIT = 8
+AI_CHAT_MESSAGE_LIMIT = 8000
 AI_MAX_REMOTE_BYTES = 20 * 1024 * 1024
 
 
@@ -151,6 +164,109 @@ def _json_structure(value, path="$", depth=0, max_depth=4):
     return {"path": path, "type": type(value).__name__}
 
 
+def _excel_cell_value(cell, shared_strings):
+    """openpyxl 없이 XLSX/XLSM 셀 값을 읽습니다."""
+    cell_type = cell.attrib.get("t", "")
+    if cell_type == "inlineStr":
+        return "".join((node.text or "") for node in cell.iter() if node.tag.endswith("}t"))
+
+    value_node = next((node for node in cell if node.tag.endswith("}v")), None)
+    formula_node = next((node for node in cell if node.tag.endswith("}f")), None)
+    value = value_node.text if value_node is not None and value_node.text is not None else ""
+
+    if cell_type == "s":
+        try:
+            value = shared_strings[int(value)]
+        except (ValueError, IndexError):
+            pass
+    elif cell_type == "b":
+        value = "TRUE" if value == "1" else "FALSE"
+
+    if formula_node is not None and formula_node.text:
+        return f"={formula_node.text}" + (f" [{value}]" if value else "")
+    return value
+
+
+def _analyze_excel_zip(file_bytes, filename):
+    """XLSX/XLSM을 Excel 엔진 없이 ZIP/XML 구조로 읽는 fallback입니다."""
+    ns_main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    ns_rel = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    ns_pkg_rel = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+    with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+        names = set(zf.namelist())
+        workbook_name = "xl/workbook.xml"
+        rels_name = "xl/_rels/workbook.xml.rels"
+        if workbook_name not in names:
+            raise ValueError("Excel workbook.xml을 찾을 수 없습니다.")
+
+        shared_strings = []
+        if "xl/sharedStrings.xml" in names:
+            shared_root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall(f"{ns_main}si"):
+                shared_strings.append("".join((node.text or "") for node in item.iter() if node.tag.endswith("}t")))
+
+        rel_targets = {}
+        if rels_name in names:
+            rel_root = ET.fromstring(zf.read(rels_name))
+            for rel in rel_root:
+                rel_id = rel.attrib.get("Id")
+                target = rel.attrib.get("Target", "")
+                if rel_id and target:
+                    target = target.lstrip("/")
+                    if not target.startswith("xl/"):
+                        target = "xl/" + target
+                    rel_targets[rel_id] = target
+
+        workbook_root = ET.fromstring(zf.read(workbook_name))
+        sheets = workbook_root.find(f"{ns_main}sheets")
+        sheet_reports = []
+        for sheet in list(sheets or [])[:20]:
+            sheet_name = sheet.attrib.get("name", "이름 없는 시트")
+            rel_id = sheet.attrib.get(f"{ns_rel}id", "")
+            sheet_path = rel_targets.get(rel_id)
+            if not sheet_path or sheet_path not in names:
+                sheet_no = re.search(r"(\d+)$", rel_id)
+                sheet_path = f"xl/worksheets/sheet{sheet_no.group(1)}.xml" if sheet_no else ""
+            if not sheet_path or sheet_path not in names:
+                sheet_reports.append(f"[시트: {sheet_name}] 시트 XML을 찾지 못했습니다.")
+                continue
+
+            root = ET.fromstring(zf.read(sheet_path))
+            rows = []
+            for row in root.iter(f"{ns_main}row"):
+                cells = {}
+                for cell in row.findall(f"{ns_main}c"):
+                    ref = cell.attrib.get("r", "")
+                    col = re.match(r"[A-Z]+", ref)
+                    col_key = col.group(0) if col else str(len(cells) + 1)
+                    cells[col_key] = _excel_cell_value(cell, shared_strings)
+                if cells:
+                    rows.append(cells)
+                if len(rows) >= 8:
+                    break
+
+            columns = []
+            for row in rows:
+                for key in row:
+                    if key not in columns:
+                        columns.append(key)
+            sample_lines = [" | ".join(str(row.get(col, "")) for col in columns) for row in rows]
+            sheet_reports.append(
+                f"[시트: {sheet_name}] 확인된 샘플 행={len(rows):,}, 열={len(columns):,}\n"
+                f"열 위치: {', '.join(columns) if columns else '없음'}\n"
+                f"샘플:\n" + ("\n".join(sample_lines) if sample_lines else "데이터 행을 찾지 못했습니다.")
+            )
+
+        macro_note = "매크로 바이너리(vbaProject.bin) 포함" if "xl/vbaProject.bin" in names else "매크로 바이너리 없음"
+        report = (
+            f"Excel 통합문서 XML 구조를 직접 확인했습니다.\n"
+            f"시트 수: {len(list(sheets or [])):,}\n"
+            f"{macro_note}\n\n" + "\n\n".join(sheet_reports)
+        )
+        return report
+
+
 def analyze_file_bytes(file_bytes, filename="", mime_type=""):
     """코드 여부와 무관하게 파일 형식, 구조, 확인 가능한 내용을 추출합니다."""
     ext = _file_ext(filename)
@@ -183,20 +299,58 @@ def analyze_file_bytes(file_bytes, filename="", mime_type=""):
                 structure += "\n결측치: " + ", ".join(nonzero_nulls[:30])
             evidence.append("앞부분 샘플:\n" + df.head(8).to_string(index=False))
 
-        elif ext in [".xlsx", ".xlsm", ".xls"]:
-            excel = pd.ExcelFile(io.BytesIO(file_bytes))
-            facts.append(f"시트 수: {len(excel.sheet_names):,}")
-            facts.append("시트명: " + ", ".join(excel.sheet_names))
-            sheet_parts = []
-            for sheet in excel.sheet_names[:20]:
-                sheet_df = pd.read_excel(excel, sheet_name=sheet)
-                sheet_parts.append(
-                    f"[시트: {sheet}] 행={len(sheet_df):,}, 열={len(sheet_df.columns):,}\n"
-                    f"열 목록: {', '.join(map(str, sheet_df.columns.tolist()))}\n"
-                    f"샘플:\n{sheet_df.head(5).to_string(index=False)}"
-                )
-            evidence.append("\n\n".join(sheet_parts))
-            structure = "엑셀 통합문서이며 시트별 표 구조를 확인했습니다."
+        elif ext in [".xlsx", ".xlsm"]:
+            # openpyxl이 없어도 XLSX/XLSM은 ZIP/XML로 구조와 샘플 데이터를 확인합니다.
+            try:
+                excel_report = _analyze_excel_zip(file_bytes, filename)
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                    workbook_root = ET.fromstring(zf.read("xl/workbook.xml"))
+                    sheet_nodes = workbook_root.findall("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheets/{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheet")
+                    facts.append(f"시트 수: {len(sheet_nodes):,}")
+                    facts.append("읽기 방식: Excel 엔진 없이 내부 XML 직접 분석")
+                    if "xl/vbaProject.bin" in zf.namelist():
+                        facts.append("매크로 포함: 예 (vbaProject.bin 확인)")
+                structure = "Excel 통합문서의 시트·셀·수식·매크로 포함 여부를 확인했습니다."
+                evidence.append(excel_report)
+            except Exception as exc:
+                # 환경에 Excel 엔진이 설치된 경우에는 pandas 방식으로 한 번 더 시도합니다.
+                try:
+                    excel = pd.ExcelFile(io.BytesIO(file_bytes))
+                    facts.append(f"시트 수: {len(excel.sheet_names):,}")
+                    facts.append("시트명: " + ", ".join(excel.sheet_names))
+                    sheet_parts = []
+                    for sheet in excel.sheet_names[:20]:
+                        sheet_df = pd.read_excel(excel, sheet_name=sheet)
+                        sheet_parts.append(
+                            f"[시트: {sheet}] 행={len(sheet_df):,}, 열={len(sheet_df.columns):,}\n"
+                            f"열 목록: {', '.join(map(str, sheet_df.columns.tolist()))}\n"
+                            f"샘플:\n{sheet_df.head(5).to_string(index=False)}"
+                        )
+                    structure = "엑셀 통합문서이며 시트별 표 구조를 확인했습니다."
+                    evidence.append("\n\n".join(sheet_parts))
+                except Exception as fallback_exc:
+                    warnings.append(f"Excel 구조 분석 실패: {type(exc).__name__}; 대체 분석도 실패: {type(fallback_exc).__name__}")
+                    structure = "Excel 파일 형식과 기본 바이트 정보까지만 확인했습니다."
+
+        elif ext == ".xls":
+            try:
+                excel = pd.ExcelFile(io.BytesIO(file_bytes))
+                facts.append(f"시트 수: {len(excel.sheet_names):,}")
+                facts.append("시트명: " + ", ".join(excel.sheet_names))
+                sheet_parts = []
+                for sheet in excel.sheet_names[:20]:
+                    sheet_df = pd.read_excel(excel, sheet_name=sheet)
+                    sheet_parts.append(
+                        f"[시트: {sheet}] 행={len(sheet_df):,}, 열={len(sheet_df.columns):,}\n"
+                        f"열 목록: {', '.join(map(str, sheet_df.columns.tolist()))}\n"
+                        f"샘플:\n{sheet_df.head(5).to_string(index=False)}"
+                    )
+                structure = "구형 Excel 통합문서이며 시트별 표 구조를 확인했습니다."
+                evidence.append("\n\n".join(sheet_parts))
+            except Exception as exc:
+                warnings.append("구형 .xls 형식은 xlrd 엔진이 필요하여 현재 구조를 확인하지 못했습니다.")
+                warnings.append(f"분석 오류 유형: {type(exc).__name__}")
+                structure = "구형 Excel 바이너리 형식으로 식별했습니다."
 
         elif ext == ".json":
             raw = file_bytes.decode("utf-8-sig", errors="replace")
@@ -1913,9 +2067,13 @@ def show_main_page():
                             "role": "system",
                             "content": _build_ai_guardrail_system("당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다.")
                         }]
-                        for m in st.session_state['ai_chat_history']:
+                        recent_history = st.session_state['ai_chat_history'][-AI_CHAT_HISTORY_LIMIT:]
+                        for m in recent_history:
                             if m["role"] in ["user", "assistant"]:
-                                messages.append({"role": m["role"], "content": m.get("payload", m["content"])})
+                                messages.append({
+                                    "role": m["role"],
+                                    "content": _clip_text(m.get("payload", m["content"]), AI_CHAT_MESSAGE_LIMIT)
+                                })
 
                         bot_ans = st.write_stream(stream_nvidia_llm_messages(messages))
 
