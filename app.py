@@ -544,6 +544,40 @@ def render_ai_feedback_card(feedback_text, feedback_time):
                     st.markdown(body)
 
 
+def generate_ai_followup_stream(title, desc, ai_feedback, user_comment):
+    """사용자의 AI 피드백 댓글에 대해 맥락을 유지한 후속 답변을 생성합니다."""
+    user_p = f"""프로젝트에 대한 AI 분석 결과와 사용자의 후속 의견이 있습니다.
+
+## 프로젝트
+- 프로젝트명: {title}
+- 설명: {desc or '(설명 없음)'}
+
+## 직전 AI 분석 피드백
+{_clip_text(ai_feedback, 9000)}
+
+## 사용자의 후속 의견
+{_clip_text(user_comment, 3000)}
+
+사용자의 의견을 정확히 반영하여 맞춤형으로 답변해 주세요.
+답변 형식:
+### 의견 반영 결과
+- 사용자의 의견을 어떻게 이해했는지
+
+### 맞춤형 답변
+- 직전 AI 분석 중 어떤 부분과 연결되는지
+- 추가로 권장하는 조치 또는 수정 방향
+
+### 확인이 필요한 사항
+- 제공된 내용만으로 판단할 수 없는 부분
+
+파일이나 대화에 없는 내용은 추측하지 말고 '확인 불가'라고 표시하세요."""
+    messages = [
+        {"role": "system", "content": _build_ai_guardrail_system("당신은 대학 행정 자동화 및 개발 프로젝트의 후속 상담을 담당하는 AI 어시스턴트입니다.")},
+        {"role": "user", "content": user_p}
+    ]
+    return stream_nvidia_llm_messages(messages)
+
+
 def generate_ai_feedback_stream(title, desc, file_url=None, filename="", files=None):
     file_evidence = []
     source_files = files or ([{"file_url": file_url, "filename": filename}] if file_url else [])
@@ -2540,13 +2574,48 @@ def show_main_page():
                                             st.rerun()
 
                         with st.form(key=f"fb_form_{item['id']}", clear_on_submit=True):
-                            fb_input = st.text_input("의견을 남겨주세요", placeholder="예: 좋은 아이디어네요! 이 부분은 이렇게 개선하면 어떨까요?")
+                            fb_input = st.text_input(
+                                "의견을 남겨주세요",
+                                placeholder="AI 피드백에 대한 추가 의견이나 질문을 입력하세요."
+                            )
                             fb_submit = st.form_submit_button("피드백 등록")
-                            if fb_submit and fb_input.strip():
-                                item['feedbacks'].append({"user": st.session_state.get('user_id', '익명'), "time": now_kst().strftime("%Y-%m-%d %H:%M"), "text": fb_input.strip()})
-                                save_data(st.session_state['app_data'])
-                                if st.session_state.get('last_save_status') != "fail":
-                                    st.rerun()
+
+                        if fb_submit and fb_input.strip():
+                            user_comment = fb_input.strip()
+                            comment_time = now_kst().strftime("%Y-%m-%d %H:%M")
+                            item['feedbacks'].append({
+                                "user": st.session_state.get('user_id', '익명'),
+                                "time": comment_time,
+                                "text": user_comment
+                            })
+
+                            latest_ai_feedback = next(
+                                (fb for fb in reversed(item['feedbacks'][:-1]) if fb.get('user') == "AI 어시스턴트"),
+                                None
+                            )
+                            if latest_ai_feedback and ai_privacy_ack:
+                                st.info("사용자 의견을 반영해 AI 어시스턴트가 맞춤형 후속 답변을 생성하고 있습니다. 잠시만 기다려 주세요.")
+                                followup_placeholder = st.empty()
+                                with followup_placeholder.container():
+                                    with st.chat_message("assistant"):
+                                        followup_reply = st.write_stream(
+                                            generate_ai_followup_stream(
+                                                item['title'],
+                                                item['desc'],
+                                                latest_ai_feedback.get('text', ''),
+                                                user_comment
+                                            )
+                                        )
+                                if followup_reply:
+                                    item['feedbacks'].append({
+                                        "user": "AI 어시스턴트",
+                                        "time": now_kst().strftime("%Y-%m-%d %H:%M"),
+                                        "text": followup_reply
+                                    })
+
+                            save_data(st.session_state['app_data'])
+                            if st.session_state.get('last_save_status') != "fail":
+                                st.rerun()
 
                     item_issues = item.get('issues', [])
                     open_cnt = len([i for i in item_issues if i.get('status') == '진행중'])
