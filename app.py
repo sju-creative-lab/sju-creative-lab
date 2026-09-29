@@ -2562,6 +2562,47 @@ def show_main_page():
                             with fb_col1:
                                 if fb['user'] == "AI 어시스턴트":
                                     render_ai_feedback_card(fb['text'], fb['time'])
+                                    st.caption("AI 피드백에 대한 의견")
+                                    with st.form(key=f"ai_feedback_comment_form_{item['id']}_{f_idx}", clear_on_submit=True):
+                                        ai_followup_input = st.text_input(
+                                            "AI 피드백에 대한 의견",
+                                            placeholder="이 분석 결과에 대해 추가로 묻거나 의견을 남겨주세요.",
+                                            label_visibility="collapsed"
+                                        )
+                                        ai_followup_submit = st.form_submit_button(
+                                            "AI에게 답변 요청",
+                                            use_container_width=True,
+                                            disabled=not ai_privacy_ack
+                                        )
+
+                                    if ai_followup_submit and ai_followup_input.strip():
+                                        followup_comment = ai_followup_input.strip()
+                                        item['feedbacks'].append({
+                                            "user": st.session_state.get('user_id', '익명'),
+                                            "time": now_kst().strftime("%Y-%m-%d %H:%M"),
+                                            "text": followup_comment
+                                        })
+                                        st.info("AI 어시스턴트가 해당 피드백과 의견을 바탕으로 맞춤형 답변을 생성하고 있습니다. 잠시만 기다려 주세요.")
+                                        followup_placeholder = st.empty()
+                                        with followup_placeholder.container():
+                                            with st.chat_message("assistant"):
+                                                followup_reply = st.write_stream(
+                                                    generate_ai_followup_stream(
+                                                        item['title'],
+                                                        item['desc'],
+                                                        fb.get('text', ''),
+                                                        followup_comment
+                                                    )
+                                                )
+                                        if followup_reply:
+                                            item['feedbacks'].append({
+                                                "user": "AI 어시스턴트",
+                                                "time": now_kst().strftime("%Y-%m-%d %H:%M"),
+                                                "text": followup_reply
+                                            })
+                                        save_data(st.session_state['app_data'])
+                                        if st.session_state.get('last_save_status') != "fail":
+                                            st.rerun()
                                 else:
                                     st.markdown(f"<div style='background-color:var(--muted); padding:10px 12px; border-radius:8px; margin-bottom:6px; border-left:3px solid var(--accent);'><b style='color:var(--foreground);'>{fb_display_name}</b> <span style='color:var(--muted-foreground); font-size:11px;'>({fb['time']})</span><div style='margin-top:4px; font-size:13px; line-height:1.5;'>{safe_text}</div></div>", unsafe_allow_html=True)
                                     
@@ -2573,46 +2614,21 @@ def show_main_page():
                                         if st.session_state.get('last_save_status') != "fail":
                                             st.rerun()
 
+                        st.markdown("##### 일반 의견 및 토론")
+                        st.caption("특정 AI 피드백이 아닌 프로젝트 전반에 대한 의견을 남기는 공간입니다.")
                         with st.form(key=f"fb_form_{item['id']}", clear_on_submit=True):
                             fb_input = st.text_input(
-                                "의견을 남겨주세요",
-                                placeholder="AI 피드백에 대한 추가 의견이나 질문을 입력하세요."
+                                "일반 의견을 남겨주세요",
+                                placeholder="프로젝트 전반에 대한 의견을 입력하세요."
                             )
                             fb_submit = st.form_submit_button("피드백 등록")
 
                         if fb_submit and fb_input.strip():
-                            user_comment = fb_input.strip()
-                            comment_time = now_kst().strftime("%Y-%m-%d %H:%M")
                             item['feedbacks'].append({
                                 "user": st.session_state.get('user_id', '익명'),
-                                "time": comment_time,
-                                "text": user_comment
+                                "time": now_kst().strftime("%Y-%m-%d %H:%M"),
+                                "text": fb_input.strip()
                             })
-
-                            latest_ai_feedback = next(
-                                (fb for fb in reversed(item['feedbacks'][:-1]) if fb.get('user') == "AI 어시스턴트"),
-                                None
-                            )
-                            if latest_ai_feedback and ai_privacy_ack:
-                                st.info("사용자 의견을 반영해 AI 어시스턴트가 맞춤형 후속 답변을 생성하고 있습니다. 잠시만 기다려 주세요.")
-                                followup_placeholder = st.empty()
-                                with followup_placeholder.container():
-                                    with st.chat_message("assistant"):
-                                        followup_reply = st.write_stream(
-                                            generate_ai_followup_stream(
-                                                item['title'],
-                                                item['desc'],
-                                                latest_ai_feedback.get('text', ''),
-                                                user_comment
-                                            )
-                                        )
-                                if followup_reply:
-                                    item['feedbacks'].append({
-                                        "user": "AI 어시스턴트",
-                                        "time": now_kst().strftime("%Y-%m-%d %H:%M"),
-                                        "text": followup_reply
-                                    })
-
                             save_data(st.session_state['app_data'])
                             if st.session_state.get('last_save_status') != "fail":
                                 st.rerun()
