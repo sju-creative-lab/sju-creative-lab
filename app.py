@@ -18,6 +18,7 @@ import zipfile
 import re
 import xml.etree.ElementTree as ET
 import streamlit.components.v1 as components
+import html as _html
 
 # ==========================================
 # NVIDIA Build API 설정 (OpenAI 호환 방식 - Streaming)
@@ -188,6 +189,39 @@ def _download_file_bytes(file_url):
         return content, ""
     except Exception as exc:
         return None, f"파일을 읽는 중 오류가 발생했습니다: {type(exc).__name__}"
+
+
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
+def _load_thumb_bytes(file_url):
+    """대표 이미지(썸네일)를 서버에서 받아 캐시합니다. 실패하면 None."""
+    data, _err = _download_file_bytes(file_url)
+    return data or None
+
+
+def _get_thumb_entry(item):
+    for f in item.get("files", []) or []:
+        if isinstance(f, dict) and f.get("is_thumb"):
+            return f
+    return None
+
+
+def _render_thumb(item, width="stretch"):
+    """대표 이미지가 있으면 표시하고, 없으면 자리표시 박스를 그립니다."""
+    entry = _get_thumb_entry(item)
+    data = _load_thumb_bytes(entry.get("file_url")) if entry and entry.get("file_url") else None
+    if data:
+        try:
+            st.image(data, width=width)
+            return True
+        except Exception:
+            pass
+    st.markdown(
+        "<div style='height:150px; display:flex; align-items:center; justify-content:center; "
+        "background:var(--muted); border-radius:10px; color:var(--muted-foreground); font-size:12px;'>"
+        "대표 이미지 없음</div>",
+        unsafe_allow_html=True
+    )
+    return False
 
 
 def _xml_text_from_zip(zf, member_names):
@@ -2316,6 +2350,7 @@ def show_main_page():
                 proj_name = st.text_input("프로젝트 명", placeholder="예: 학사행정 챗봇 자동응답 시스템")
                 proj_desc = st.text_area("산출물 설명", placeholder="예: 학생 문의를 자동으로 분류하고 답변하는 AI 챗봇입니다.")
                 uploaded_files = st.file_uploader("산출물 파일 첨부 (여러 개 선택 가능)", accept_multiple_files=True)
+                thumb_upload = st.file_uploader("대표 이미지 (갤러리 썸네일, 선택)", type=["png", "jpg", "jpeg", "webp", "gif"], key="upload_thumb")
                 st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML, 파이썬 파일 등은 새 창에서 미리보기가 가능합니다.")
 
                 if st.form_submit_button("실험실에 배포하기", width="stretch"):
@@ -2334,6 +2369,13 @@ def show_main_page():
                                 except Exception as e:
                                     st.error(f"'{uf.name}' 업로드 실패: {e}")
                                     
+                            if file_list and thumb_upload is not None:
+                                try:
+                                    t_url = upload_to_gdrive_and_get_link(thumb_upload)
+                                    file_list.append({"filename": thumb_upload.name, "file_url": t_url, "is_thumb": True})
+                                except Exception as e:
+                                    st.error(f"대표 이미지 업로드 실패: {e}")
+
                             if file_list:
                                 new_item = {
                                     "id": new_id,
@@ -2380,12 +2422,45 @@ def show_main_page():
             else:
                 st.info("아직 공유된 산출물이 없습니다. 위의 업로드 영역에서 첫 산출물을 공유해 보세요.")
         else:
-            for item in filtered_repo:
+            view_mode = st.segmented_control("보기 방식", ["갤러리", "목록"], default="갤러리", key="repo_view_mode", label_visibility="collapsed") or "갤러리"
+            selected_id = st.session_state.get("gallery_selected_id")
+            items_to_show = filtered_repo
+
+            if view_mode == "갤러리":
+                selected_item = next((p for p in filtered_repo if str(p['id']) == str(selected_id)), None) if selected_id is not None else None
+                if selected_item is None:
+                    items_to_show = []
+                    g_cols_n = 3
+                    for row_start in range(0, len(filtered_repo), g_cols_n):
+                        g_cols = st.columns(g_cols_n)
+                        for g_col, g_item in zip(g_cols, filtered_repo[row_start:row_start + g_cols_n]):
+                            with g_col:
+                                with st.container(border=True):
+                                    _render_thumb(g_item)
+                                    g_done = bool(g_item.get('completed_at'))
+                                    g_status = "<span class='proj-status-done'>완료</span>" if g_done else "<span class='proj-status-progress'>진행중</span>"
+                                    st.markdown(
+                                        f"<div class='repo-title-row'><p class='repo-title'>{_html.escape(str(g_item['title']))}</p>{g_status}</div>",
+                                        unsafe_allow_html=True
+                                    )
+                                    st.caption(f"{g_item.get('category', '일반')} · {get_display_name(g_item['author'])} · {str(g_item['date'])[:10]}")
+                                    if st.button("자세히 보기", key=f"gal_open_{g_item['id']}", width="stretch"):
+                                        st.session_state["gallery_selected_id"] = g_item['id']
+                                        st.rerun()
+                else:
+                    items_to_show = [selected_item]
+                    if st.button("← 갤러리로 돌아가기", key="gal_back"):
+                        st.session_state["gallery_selected_id"] = None
+                        st.rerun()
+
+            for item in items_to_show:
                 with st.container(border=True):
                     st.markdown("<div class='repo-card-inner'>", unsafe_allow_html=True)
 
                     top_col, action_col = st.columns(2)
                     with top_col:
+                        if _get_thumb_entry(item):
+                            _render_thumb(item, width=220)
                         is_done = bool(item.get('completed_at'))
                         status_html = "<span class='proj-status-done'>완료</span>" if is_done else "<span class='proj-status-progress'>진행중</span>"
                         manager_name = get_display_name(item['author'])
@@ -2416,7 +2491,7 @@ def show_main_page():
                     can_manage = (current_user_str == item_author_str or is_user_admin(st.session_state.get('user_id')))
 
                     with action_col:
-                        existing_files = item.get("files", [])
+                        existing_files = [f for f in item.get("files", []) if not f.get("is_thumb")]
                         if item.get("filename") and not existing_files:
                             existing_files = [{"filename": item["filename"], "file_url": item.get("file_url"), "file_data": item.get("file_data", b"")}]
                             
@@ -2496,7 +2571,8 @@ def show_main_page():
                             edit_desc = st.text_area("설명 수정", value=item['desc'])
                             
                             st.markdown("###### 첨부파일 관리")
-                            existing_files_for_edit = item.get("files", [])
+                            existing_files_for_edit = [f for f in item.get("files", []) if not f.get("is_thumb")]
+                            thumb_entries = [f for f in item.get("files", []) if f.get("is_thumb")]
                             if item.get("filename") and not existing_files_for_edit:
                                 existing_files_for_edit = [{"filename": item["filename"], "file_url": item.get("file_url")}]
                             
@@ -2509,6 +2585,9 @@ def show_main_page():
                                 st.caption("기존 첨부파일이 없습니다.")
                             
                             new_uploads = st.file_uploader("새 파일 추가 (여러 개 선택 가능)", accept_multiple_files=True, key=f"new_up_{item['id']}")
+                            st.markdown("###### 대표 이미지")
+                            new_thumb = st.file_uploader("대표 이미지 변경 (선택)", type=["png", "jpg", "jpeg", "webp", "gif"], key=f"new_thumb_{item['id']}")
+                            remove_thumb = st.checkbox("현재 대표 이미지 삭제", key=f"del_thumb_{item['id']}") if thumb_entries else False
                             save_edit_btn = st.form_submit_button("수정 내용 저장", type="primary")
                             
                             if save_edit_btn:
@@ -2530,9 +2609,21 @@ def show_main_page():
                                     
                                     item['title'] = edit_title
                                     item['desc'] = edit_desc
-                                    item['files'] = updated_files
                                     item['filename'] = updated_files[0]['filename'] if updated_files else ""
                                     item['file_url'] = updated_files[0]['file_url'] if updated_files else ""
+
+                                    final_thumbs = thumb_entries
+                                    if new_thumb is not None or remove_thumb:
+                                        for t in thumb_entries:
+                                            if t.get('file_url'):
+                                                delete_from_gdrive(t['file_url'])
+                                        final_thumbs = []
+                                        if new_thumb is not None:
+                                            try:
+                                                final_thumbs = [{"filename": new_thumb.name, "file_url": upload_to_gdrive_and_get_link(new_thumb), "is_thumb": True}]
+                                            except Exception as e:
+                                                st.error(f"대표 이미지 업로드 실패: {e}")
+                                    item['files'] = updated_files + final_thumbs
                                     
                                     save_data(st.session_state['app_data'])
                                     if st.session_state.get('last_save_status') != "fail":
@@ -2556,7 +2647,7 @@ def show_main_page():
                             with placeholder.container():
                                 st.info("AI 어시스턴트가 업로드된 파일의 형식과 내용을 분석하여 답변을 생성하고 있습니다. 잠시만 기다려 주세요.")
                                 with st.chat_message("assistant"):
-                                    analysis_files = item.get('files', [])
+                                    analysis_files = [f for f in item.get('files', []) if not f.get('is_thumb')]
                                     if not analysis_files and item.get('filename'):
                                         analysis_files = [{
                                             "filename": item.get('filename', ''),
