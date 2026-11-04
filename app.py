@@ -193,9 +193,25 @@ def _download_file_bytes(file_url):
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
 def _load_thumb_bytes(file_url):
-    """대표 이미지(썸네일)를 서버에서 받아 캐시합니다. 실패하면 None."""
-    data, _err = _download_file_bytes(file_url)
-    return data or None
+    """대표 이미지를 받아 안전한 JPEG(가로 최대 800px)로 변환해 캐시합니다. 실패하면 예외(캐시되지 않음)."""
+    from PIL import Image, ImageOps
+    data, err = _download_file_bytes(file_url)
+    if not data:
+        raise ValueError(err or "이미지를 받지 못했습니다.")
+    img = Image.open(io.BytesIO(data))
+    img = ImageOps.exif_transpose(img)
+    if img.mode in ("RGBA", "LA", "P"):
+        img = img.convert("RGBA")
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[-1])
+        img = bg
+    else:
+        img = img.convert("RGB")
+    if img.width > 800:
+        img = img.resize((800, max(1, int(img.height * 800 / img.width))))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=85)
+    return out.getvalue()
 
 
 def _get_thumb_entry(item):
@@ -206,19 +222,19 @@ def _get_thumb_entry(item):
 
 
 def _render_thumb(item, width="stretch"):
-    """대표 이미지가 있으면 표시하고, 없으면 자리표시 박스를 그립니다."""
+    """대표 이미지가 있으면 표시하고, 없거나 읽을 수 없으면 자리표시 박스를 그립니다."""
     entry = _get_thumb_entry(item)
-    data = _load_thumb_bytes(entry.get("file_url")) if entry and entry.get("file_url") else None
-    if data:
+    msg = "대표 이미지 없음"
+    if entry and entry.get("file_url"):
         try:
-            st.image(data, width=width)
+            st.image(_load_thumb_bytes(entry.get("file_url")), width=width)
             return True
-        except Exception:
-            pass
+        except Exception as exc:
+            msg = f"이미지를 불러오지 못했습니다 ({_html.escape(str(exc)[:60])})"
     st.markdown(
-        "<div style='height:150px; display:flex; align-items:center; justify-content:center; "
+        "<div style='height:150px; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; "
         "background:var(--muted); border-radius:10px; color:var(--muted-foreground); font-size:12px;'>"
-        "대표 이미지 없음</div>",
+        f"{msg}</div>",
         unsafe_allow_html=True
     )
     return False
