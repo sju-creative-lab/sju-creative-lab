@@ -637,7 +637,7 @@ AUTO_LOGOUT_MINUTES = 30
 KST = timezone(timedelta(hours=9))
 PAGE_SIZE = 10
 GAS_URL = st.secrets["https://script.google.com/macros/s/AKfycbxXXElTYATgiI3gGTP7AdD8Bg5QkuEwBA39HlMrUoXQSppLGBHu0Vf2O1qLkxmeHaa-/exec"]
-SECRET_KEY = st.secrets["jaE]vNp|~8R8D6Sq{"]
+SECRET_KEY = st.secrets["jaE]vNp|-8R8D6Sq-"]
 
 st.set_page_config(page_title="AI 교육혁신처 실험실 포털", layout="wide", initial_sidebar_state="expanded")
 
