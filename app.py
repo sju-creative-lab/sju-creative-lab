@@ -135,16 +135,25 @@ def sanitize_messages_for_external_ai(messages):
         safe_messages.append(copied)
     return safe_messages, sorted(set(detected))
 
-
 def _file_ext(filename):
     return (os.path.splitext(str(filename or ""))[1] or "").lower()
 
+def _normalize_drive_url(file_url):
+    """드라이브 미리보기 링크를 직접 다운로드 링크로 바꿉니다."""
+    url = str(file_url or "")
+    if "drive.google.com" not in url:
+        return url
+    m = re.search(r"/d/([\w-]+)", url) or re.search(r"[?&]id=([\w-]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
 
 def _download_file_bytes(file_url):
     """Google Drive 공유 링크를 포함해 원격 파일의 실제 바이트를 가져옵니다."""
     if not file_url or not str(file_url).startswith("http"):
         return None, "파일 URL이 없습니다."
     try:
+        file_url = _normalize_drive_url(file_url)
         session = requests.Session()
         response = session.get(file_url, timeout=20)
         if response.status_code != 200:
@@ -168,6 +177,9 @@ def _download_file_bytes(file_url):
                 response = session.get(file_url + "&confirm=t", cookies=response.cookies, timeout=30)
 
         content = response.content
+        head = content[:300].lstrip().lower()
+        if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+            return None, "드라이브에서 파일 대신 웹페이지가 내려왔습니다. 파일의 공유 설정이 '링크가 있는 모든 사용자'인지 확인해 주세요."
         if len(content) > AI_MAX_REMOTE_BYTES:
             return None, f"파일이 너무 큽니다. AI 분석은 {AI_MAX_REMOTE_BYTES // (1024 * 1024)}MB 이하만 지원합니다."
         return content, ""
