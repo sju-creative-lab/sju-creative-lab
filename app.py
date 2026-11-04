@@ -671,7 +671,7 @@ def safe_show_logo(width=None, use_container_width=False):
             if width:
                 st.image(LOGO_IMAGE, width=width)
             else:
-                st.image(LOGO_IMAGE, use_container_width=use_container_width)
+                st.image(LOGO_IMAGE, width="stretch" if use_container_width else "content")
         else:
             st.markdown(
                 "<div style='text-align:center; padding:14px; border:1px dashed var(--border); "
@@ -924,7 +924,7 @@ if 'app_data' not in st.session_state:
         st.write("<br>"*5, unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
         with c2:
-            safe_show_logo(use_container_width=True)
+            safe_show_logo(width="stretch")
         st.markdown(splash_html, unsafe_allow_html=True)
         st.write("<br>"*10, unsafe_allow_html=True)
         
@@ -1434,9 +1434,9 @@ def _render_signup_confirm_body():
 
     c1, c2 = st.columns(2)
     with c1:
-        btn_cancel = st.button("다시 입력하기", key="signup_confirm_cancel", use_container_width=True)
+        btn_cancel = st.button("다시 입력하기", key="signup_confirm_cancel", width="stretch")
     with c2:
-        btn_done = st.button("완료", key="signup_confirm_done", use_container_width=True, type="primary")
+        btn_done = st.button("완료", key="signup_confirm_done", width="stretch", type="primary")
 
     if btn_cancel:
         st.session_state['pending_signup'] = None
@@ -1472,7 +1472,7 @@ else:
 def _render_abnormal_access_body():
     st.markdown("현황조사가 정상적으로 제출되지 않은 비정상적인 접근입니다.<br>모든 항목에 대해 내용 입력 후 제출 버튼을 눌러주시기 바랍니다.", unsafe_allow_html=True)
     st.write("")
-    if st.button("닫기", use_container_width=True):
+    if st.button("닫기", width="stretch"):
         st.session_state['show_abnormal_popup'] = False
         st.rerun()
 
@@ -1598,7 +1598,7 @@ def show_login_page():
                     user_id = st.text_input("ID 또는 이메일", key="login_id", placeholder="예: hongildong")
                     password = st.text_input("패스워드", type="password", key="login_pw", placeholder="비밀번호를 입력하세요")
                     st.write("<br>", unsafe_allow_html=True)
-                    login_submit = st.form_submit_button("로그인", use_container_width=True)
+                    login_submit = st.form_submit_button("로그인", width="stretch")
 
                 if login_submit:
                     users_db = st.session_state['app_data']['users_db']
@@ -1625,7 +1625,7 @@ def show_login_page():
                     new_id = st.text_input("새 ID", key="signup_id", placeholder="예: hongildong01")
                     new_pw = st.text_input("새 패스워드", type="password", key="signup_pw", placeholder="영문/숫자 조합 8자 이상 권장")
                     new_pw_check = st.text_input("패스워드 확인", type="password", key="signup_pw_chk", placeholder="비밀번호를 한번 더 입력하세요")
-                    signup_submit = st.form_submit_button("계정 생성하기", use_container_width=True)
+                    signup_submit = st.form_submit_button("계정 생성하기", width="stretch")
 
                 if signup_submit:
                     users_db = st.session_state['app_data']['users_db']
@@ -1652,7 +1652,7 @@ def show_login_page():
 def _render_survey_success_body():
     st.markdown("제출이 정상적으로 완료되었습니다.<br><br>보내주신 내용을 꼼꼼히 검토하여 개선 업무를 선정한 뒤, 담당자 1:1 미팅 일정을 잔디 메시지로 개별 안내해 드릴 예정입니다.", unsafe_allow_html=True)
     st.write("")
-    if st.button("확인하였습니다.", use_container_width=True, type="primary"):
+    if st.button("확인하였습니다.", width="stretch", type="primary"):
         st.session_state['show_survey_success'] = False
         st.rerun()
 
@@ -1708,7 +1708,7 @@ def show_survey_page():
 
         improvement = st.text_area("개선 필요사항", placeholder="- 엑셀에 입력하는 과정에서 오타 발생\n- 수기입력에 행정력 소모 심함\n- 기존 이용내역에 대한 통계 등 누적자료에 대한 분석 어려움")
 
-        submitted = st.form_submit_button("현황조사 제출 완료하기", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("현황조사 제출 완료하기", width="stretch", type="primary")
 
         if submitted:
             empty_fields = []
@@ -1754,7 +1754,7 @@ def show_survey_page():
     
     _, bottom_logo_col, _ = st.columns(3)
     with bottom_logo_col:
-        safe_show_logo(use_container_width=True)
+        safe_show_logo(width="stretch")
 
 
 def get_filtered_repo():
@@ -1791,21 +1791,21 @@ def render_pagination(total_items, page_state_key, key_prefix):
 
     p1, p2, p3, p4, p5 = st.columns(5)
     with p1:
-        if st.button("« 처음", key=f"{key_prefix}_first", use_container_width=True, disabled=(current_page <= 1)):
+        if st.button("« 처음", key=f"{key_prefix}_first", width="stretch", disabled=(current_page <= 1)):
             st.session_state[page_state_key] = 1
             st.rerun()
     with p2:
-        if st.button("‹ 이전", key=f"{key_prefix}_prev", use_container_width=True, disabled=(current_page <= 1)):
+        if st.button("‹ 이전", key=f"{key_prefix}_prev", width="stretch", disabled=(current_page <= 1)):
             st.session_state[page_state_key] = current_page - 1
             st.rerun()
     with p3:
         st.markdown(f"<div style='text-align:center; padding-top:8px; font-size:13px; color:var(--muted-foreground);'>{current_page} / {total_pages} 페이지 (총 {total_items}건)</div>", unsafe_allow_html=True)
     with p4:
-        if st.button("다음 ›", key=f"{key_prefix}_next", use_container_width=True, disabled=(current_page >= total_pages)):
+        if st.button("다음 ›", key=f"{key_prefix}_next", width="stretch", disabled=(current_page >= total_pages)):
             st.session_state[page_state_key] = current_page + 1
             st.rerun()
     with p5:
-        if st.button("마지막 »", key=f"{key_prefix}_last", use_container_width=True, disabled=(current_page >= total_pages)):
+        if st.button("마지막 »", key=f"{key_prefix}_last", width="stretch", disabled=(current_page >= total_pages)):
             st.session_state[page_state_key] = total_pages
             st.rerun()
 
@@ -1914,7 +1914,7 @@ def render_department_timeline():
         legend_title_text='상태',
         bargap=0.35
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     done_rows = [r for r in rows if r["상태"] == "완료"]
     if done_rows:
@@ -1925,7 +1925,7 @@ def render_department_timeline():
         ])
         avg_df = dur_df.groupby("부서", as_index=False)["소요시간(시간)"].mean()
         avg_df["소요시간(시간)"] = avg_df["소요시간(시간)"].round(1)
-        st.dataframe(avg_df, use_container_width=True, hide_index=True)
+        st.dataframe(avg_df, width="stretch", hide_index=True)
     else:
         st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 있습니다. 실험실 목록에서 산출물을 '완료 처리'해 보세요.")
 
@@ -1986,7 +1986,7 @@ def show_ai_assistant_dialog(ai_privacy_ack):
         new_question_clicked = st.button(
             "새 질문",
             key="new_ai_question_bottom",
-            use_container_width=True,
+            width="stretch",
             disabled=not ai_privacy_ack
         )
 
@@ -2082,7 +2082,7 @@ def show_main_page():
     with col_ui:
         r1, r2, r3, r4 = st.columns(4)
         with r1:
-            if st.button("로그아웃", use_container_width=True):
+            if st.button("로그아웃", width="stretch"):
                 keys_to_clear = ['logged_in', 'user_id', 'last_activity', 'show_survey_success', 'pending_signup']
                 for k in keys_to_clear:
                     if k in st.session_state:
@@ -2095,7 +2095,7 @@ def show_main_page():
             st.markdown(f"<div id='realtime-timer-badge'><span id='realtime-timer'>--:--</span></div>", unsafe_allow_html=True)
             inject_timer_js()
         with r3:
-            if st.button("연장", use_container_width=True):
+            if st.button("연장", width="stretch"):
                 st.session_state['last_activity'] = now_kst()
                 st.rerun()
         with r4:
@@ -2225,7 +2225,7 @@ def show_main_page():
                         font=dict(family="Pretendard, sans-serif", color="#0F172A"),
                         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 else:
                     st.info("시각화할 프로젝트 데이터가 부족합니다.")
         with chart_col2:
@@ -2244,7 +2244,7 @@ def show_main_page():
                         font=dict(family="Pretendard, sans-serif", color="#0F172A"),
                         paper_bgcolor='rgba(0,0,0,0)'
                     )
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, width="stretch")
                 else:
                     st.info("등록된 프로젝트가 없어 부서 분포를 표시할 수 없습니다.")
 
@@ -2318,7 +2318,7 @@ def show_main_page():
                 uploaded_files = st.file_uploader("산출물 파일 첨부 (여러 개 선택 가능)", accept_multiple_files=True)
                 st.caption("보안상 업로드된 코드/스크립트 파일을 서버에서 직접 실행하는 기능은 제공하지 않습니다. HTML, 파이썬 파일 등은 새 창에서 미리보기가 가능합니다.")
 
-                if st.form_submit_button("실험실에 배포하기", use_container_width=True):
+                if st.form_submit_button("실험실에 배포하기", width="stretch"):
                     if proj_name and uploaded_files:
                         with st.spinner("파일을 안전하게 업로드 중입니다... (여러 파일일 경우 다소 시간이 소요됩니다)"):
                             existing_ids = [item['id'] for item in repo_data_all] if repo_data_all else [0]
@@ -2433,29 +2433,29 @@ def show_main_page():
                                     btn_c1, btn_c2 = st.columns(2)
                                     with btn_c1:
                                         if f_info.get('file_url') and str(f_info['file_url']).startswith("http"):
-                                            st.link_button("다운로드", url=f_info['file_url'], use_container_width=True)
+                                            st.link_button("다운로드", url=f_info['file_url'], width="stretch")
                                         elif f_info.get('file_data') and len(f_info['file_data']) > 0:
-                                            st.download_button("다운로드", data=f_info['file_data'], file_name=f_name, key=f"dl_{item['id']}_{f_idx}", use_container_width=True)
+                                            st.download_button("다운로드", data=f_info['file_data'], file_name=f_name, key=f"dl_{item['id']}_{f_idx}", width="stretch")
                                         else:
-                                            st.button("만료", disabled=True, key=f"dl_{item['id']}_{f_idx}", use_container_width=True)
+                                            st.button("만료", disabled=True, key=f"dl_{item['id']}_{f_idx}", width="stretch")
                                             
                                     with btn_c2:
                                         preview_supported = file_ext in ['html', 'htm', 'py', 'txt', 'csv', 'json', 'js', 'css', 'md']
                                         has_file = (f_info.get('file_url') and str(f_info['file_url']).startswith("http")) or (f_info.get('file_data') and len(f_info['file_data']) > 0)
                                         
                                         if preview_supported and has_file:
-                                            if st.button("미리보기", key=f"pv_{item['id']}_{f_idx}", use_container_width=True):
+                                            if st.button("미리보기", key=f"pv_{item['id']}_{f_idx}", width="stretch"):
                                                 show_preview_modal(f_name, f_info.get('file_url'), f_info.get('file_data'))
 
                     if can_manage:
                         m_col1, m_col2, m_col3, m_spacer = st.columns([1.3, 1.3, 1.3, 2.1])
                         with m_col1:
                             edit_toggle_key = f"edit_toggle_{item['id']}"
-                            if st.button("내용 수정", key=f"edit_open_{item['id']}", use_container_width=True):
+                            if st.button("내용 수정", key=f"edit_open_{item['id']}", width="stretch"):
                                 st.session_state[edit_toggle_key] = not st.session_state.get(edit_toggle_key, False)
                         with m_col2:
                             if not item.get('completed_at'):
-                                if st.button("완료 처리", key=f"complete_{item['id']}", use_container_width=True):
+                                if st.button("완료 처리", key=f"complete_{item['id']}", width="stretch"):
                                     completed_time = now_kst().strftime("%Y-%m-%d %H:%M")
                                     item['completed_at'] = completed_time
                                     record_timeline_completion(item)
@@ -2464,16 +2464,16 @@ def show_main_page():
                                         st.success("완료 처리되었습니다. 제작 타임라인에 기록됩니다.")
                                         st.rerun()
                             else:
-                                if st.button("완료 취소", key=f"uncomplete_{item['id']}", use_container_width=True):
+                                if st.button("완료 취소", key=f"uncomplete_{item['id']}", width="stretch"):
                                     item['completed_at'] = None
                                     save_data(st.session_state['app_data'])
                                     if st.session_state.get('last_save_status') != "fail":
                                         st.success("완료 상태가 취소되어 다시 진행중으로 표시됩니다.")
                                         st.rerun()
                         with m_col3:
-                            with st.popover("산출물 삭제", use_container_width=True):
+                            with st.popover("산출물 삭제", width="stretch"):
                                 st.markdown("**정말 삭제하시겠습니까?**<br>관련 피드백과 이슈도 모두 삭제됩니다.", unsafe_allow_html=True)
-                                if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", use_container_width=True):
+                                if st.button("네, 삭제합니다", key=f"del_confirm_{item['id']}", type="primary", width="stretch"):
                                     files_to_delete = item.get("files", [])
                                     if not files_to_delete and item.get("file_url"):
                                         files_to_delete = [{"file_url": item["file_url"]}]
@@ -2549,7 +2549,7 @@ def show_main_page():
                         if st.button(
                             "AI 어시스턴트 분석 및 피드백 요청",
                             key=f"ai_btn_{item['id']}",
-                            use_container_width=True,
+                            width="stretch",
                             disabled=not ai_privacy_ack
                         ):
                             placeholder = st.empty()
@@ -2599,7 +2599,7 @@ def show_main_page():
                                         )
                                         ai_followup_submit = st.form_submit_button(
                                             "AI에게 답변 요청",
-                                            use_container_width=True,
+                                            width="stretch",
                                             disabled=not ai_privacy_ack
                                         )
 
@@ -2636,7 +2636,7 @@ def show_main_page():
                                     
                             with fb_col2:
                                 if is_admin or current_user_str == str(fb.get('user', '')).strip():
-                                    if st.button("삭제", key=f"del_fb_{item['id']}_{f_idx}", use_container_width=True):
+                                    if st.button("삭제", key=f"del_fb_{item['id']}_{f_idx}", width="stretch"):
                                         item['feedbacks'].pop(f_idx)
                                         save_data(st.session_state['app_data'])
                                         if st.session_state.get('last_save_status') != "fail":
@@ -2681,14 +2681,14 @@ def show_main_page():
                             with ic2:
                                 if can_manage:
                                     toggle_label = "완료 처리" if iss.get('status') == '진행중' else "재오픈"
-                                    if st.button(toggle_label, key=f"issue_toggle_{item['id']}_{iss['id']}", use_container_width=True):
+                                    if st.button(toggle_label, key=f"issue_toggle_{item['id']}_{iss['id']}", width="stretch"):
                                         iss['status'] = '완료' if iss.get('status') == '진행중' else '진행중'
                                         save_data(st.session_state['app_data'])
                                         if st.session_state.get('last_save_status') != "fail":
                                             st.rerun()
                             with ic3:
                                 if is_user_admin(current_user_id):
-                                    if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", use_container_width=True):
+                                    if st.button("삭제", key=f"issue_del_{item['id']}_{iss['id']}", width="stretch"):
                                         item['issues'] = [i for i in item_issues if i['id'] != iss['id']]
                                         save_data(st.session_state['app_data'])
                                         if st.session_state.get('last_save_status') != "fail":
@@ -2733,7 +2733,7 @@ def show_main_page():
                 "조사 제출": "완료" if uinfo.get("survey_completed", False) else "미제출"
             })
         users_df = pd.DataFrame(users_rows)
-        st.dataframe(users_df, use_container_width=True, hide_index=True)
+        st.dataframe(users_df, width="stretch", hide_index=True)
 
         st.markdown("#### 회원가입 승인 대기 목록")
         pending_users = [uid for uid, uinfo in users_db.items() if not uinfo.get("approved", True)]
@@ -2747,7 +2747,7 @@ def show_main_page():
                     with c1:
                         st.markdown(f"**{uid}** ({uinfo.get('dept', '-')} / {uinfo.get('manager', '-')})")
                     with c2:
-                        if st.button("승인", key=f"approve_{uid}", use_container_width=True):
+                        if st.button("승인", key=f"approve_{uid}", width="stretch"):
                             st.session_state['app_data']['users_db'][uid]["approved"] = True
                             save_data(st.session_state['app_data'])
                             if st.session_state.get('last_save_status') != "fail":
@@ -2775,7 +2775,7 @@ def show_main_page():
                         )
                     with rc2:
                         if current_role != "admin":
-                            if st.button("관리자로 지정", key=f"grant_admin_{uid}", use_container_width=True):
+                            if st.button("관리자로 지정", key=f"grant_admin_{uid}", width="stretch"):
                                 st.session_state['app_data']['users_db'][uid]["role"] = "admin"
                                 save_data(st.session_state['app_data'])
                                 if st.session_state.get('last_save_status') != "fail":
@@ -2783,7 +2783,7 @@ def show_main_page():
                                     st.rerun()
                     with rc3:
                         if current_role == "admin":
-                            if st.button("권한 해제", key=f"revoke_admin_{uid}", use_container_width=True):
+                            if st.button("권한 해제", key=f"revoke_admin_{uid}", width="stretch"):
                                 st.session_state['app_data']['users_db'][uid]["role"] = "user"
                                 save_data(st.session_state['app_data'])
                                 if st.session_state.get('last_save_status') != "fail":
@@ -2856,7 +2856,7 @@ def show_main_page():
             if "User_ID" in survey_df.columns:
                 survey_df["User_ID"] = survey_df["User_ID"].astype(str)
             st.markdown(f"**총 제출 건수:** {len(survey_df)}건")
-            st.dataframe(survey_df, use_container_width=True, hide_index=True)
+            st.dataframe(survey_df, width="stretch", hide_index=True)
             
             csv_data = survey_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
@@ -2864,7 +2864,7 @@ def show_main_page():
                 data=csv_data,
                 file_name=f"자동화대상업무_현황조사_{now_kst().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
-                use_container_width=True
+                width="stretch"
             )
 
 
@@ -2872,7 +2872,7 @@ def show_sidebar():
     with st.sidebar:
         col_side1, col_side2, col_side3 = st.columns(3)
         with col_side2:
-            safe_show_logo(use_container_width=True)
+            safe_show_logo(width="stretch")
         st.markdown("<h3 style='text-align:center;'>AI 교육혁신처 실험실 포털</h3>", unsafe_allow_html=True)
         st.markdown("---")
 
@@ -2885,9 +2885,9 @@ def show_sidebar():
             
             cb1, cb2 = st.columns(2)
             with cb1:
-                search_btn = st.form_submit_button("검색", use_container_width=True)
+                search_btn = st.form_submit_button("검색", width="stretch")
             with cb2:
-                reset_btn = st.form_submit_button("초기화", use_container_width=True)
+                reset_btn = st.form_submit_button("초기화", width="stretch")
                 
         if search_btn:
             st.session_state['repo_page'] = 1
