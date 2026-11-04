@@ -94,6 +94,9 @@ def _clip_text(value, limit=AI_EVIDENCE_LIMIT):
         return text
     return text[:limit] + "\n...[분석 가능한 범위까지만 표시됨]"
 
+def _no_mermaid(text):
+    """mermaid 코드 블록은 그림으로 그리지 않고 일반 코드로 표시합니다."""
+    return str(text or "").replace("```mermaid", "```text")
 
 SENSITIVE_AI_PATTERNS = [
     ("주민등록번호", re.compile(r"\b\d{6}[- ]?\d{7}\b")),
@@ -504,7 +507,9 @@ def _build_ai_guardrail_system(role_description):
 - 파일을 읽지 못했거나 정보가 부족한 부분은 '확인 불가'라고 표시합니다.
 - 파일 형식만 보고 내용이나 오류를 추측하지 않습니다.
 - 코드가 아닌 표, JSON, 문서, 프레젠테이션, 이미지도 먼저 형식과 구조를 설명한 뒤 분석합니다.
-- 사용자가 한눈에 이해하도록 제목, 핵심 요약, 우선순위, 근거, 확인 필요 사항을 Markdown으로 구분합니다."""
+- 사용자가 한눈에 이해하도록 제목, 핵심 요약, 우선순위, 근거, 확인 필요 사항을 Markdown으로 구분합니다.
+- 사용자가 요청하지 않았다면 Mermaid 같은 다이어그램 코드 블록은 만들지 않고, 필요하면 글과 표로 설명합니다.
+- 입력에서 확인되지 않은 내용을 '추정'이나 '예상' 항목으로 새로 만들지 않습니다."""
 
 
 def _split_ai_feedback_sections(text):
@@ -547,7 +552,7 @@ def render_ai_feedback_card(feedback_text, feedback_time):
             unsafe_allow_html=True
         )
         st.markdown("#### 한눈에 보는 결론")
-        st.markdown(_clip_text(summary_body, 900))
+        st.markdown(_no_mermaid(_clip_text(summary_body, 900)))
 
         detail_sections = [section for i, section in enumerate(sections) if i != summary_index and section[1].strip()]
         if detail_sections:
@@ -555,7 +560,7 @@ def render_ai_feedback_card(feedback_text, feedback_time):
             for title, body in detail_sections:
                 expanded = "주요 발견" in title
                 with st.expander(title, expanded=expanded):
-                    st.markdown(body)
+                    st.markdown(_no_mermaid(body))
 
 
 def generate_ai_followup_stream(title, desc, ai_feedback, user_comment):
@@ -1922,7 +1927,7 @@ def render_department_timeline():
         avg_df["소요시간(시간)"] = avg_df["소요시간(시간)"].round(1)
         st.dataframe(avg_df, use_container_width=True, hide_index=True)
     else:
-        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 일습니다. 실험실 목록에서 산출물을 '완료 처리'해 보세요.")
+        st.caption("아직 완료 처리된 산출물이 없어 평균 소요 시간을 계산할 수 있습니다. 실험실 목록에서 산출물을 '완료 처리'해 보세요.")
 
 
 def render_ai_privacy_notice():
@@ -1945,6 +1950,103 @@ def render_ai_privacy_notice():
         )
     return bool(st.session_state.get("ai_privacy_ack", False))
 
+@st.dialog("AI 어시스턴트", width="large")
+def show_ai_assistant_dialog(ai_privacy_ack):
+    st.caption("질문과 함께 파일을 첨부하면 파일 형식·내부 구조·확인 가능한 내용까지 근거를 표시해 답변합니다.")
+
+    if ai_privacy_ack:
+        st.caption("개인정보 보호 안내 확인 완료 · 민감정보는 자동 마스킹됩니다.")
+    else:
+        st.warning("먼저 개인정보 보호 안내를 확인해 주세요.")
+
+    chat_file = st.file_uploader(
+        "분석할 파일 첨부 (선택)",
+        accept_multiple_files=False,
+        key="floating_chat_file",
+        help="CSV, Excel, JSON, TXT, PDF, Word, PowerPoint, 이미지 등. 읽지 못한 내용은 추측하지 않습니다."
+    )
+    if chat_file:
+        st.caption(f"첨부됨: {chat_file.name} · {len(chat_file.getvalue()):,} bytes")
+
+    chat_box = st.container(height=380)
+    with chat_box:
+        for msg in st.session_state['ai_chat_history']:
+            with st.chat_message(msg["role"]):
+                st.markdown(_no_mermaid(msg.get("display", msg["content"])))
+
+    chat_input_col, new_question_col = st.columns([8.8, 1.2], gap="small")
+    with chat_input_col:
+        chat_prompt = st.chat_input(
+            "질문을 입력하세요...",
+            key="floating_chat_input",
+            disabled=not ai_privacy_ack
+        )
+    with new_question_col:
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        new_question_clicked = st.button(
+            "새 질문",
+            key="new_ai_question_bottom",
+            use_container_width=True,
+            disabled=not ai_privacy_ack
+        )
+
+    if new_question_clicked:
+        st.session_state['ai_chat_history'] = [
+            {"role": "assistant", "content": "안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."}
+        ]
+        st.session_state.pop("floating_chat_file", None)
+        st.rerun(scope="fragment")
+
+    if chat_prompt:
+        question = chat_prompt.strip()
+        evidence = ""
+        attachment_label = ""
+        if chat_file:
+            attachment_label = f"첨부파일: `{chat_file.name}`"
+            evidence = analyze_file_bytes(chat_file.getvalue(), chat_file.name, chat_file.type)
+        elif not question:
+            question = "첨부 파일을 분석해 주세요."
+
+        safe_question, question_findings = sanitize_sensitive_text(question)
+        safe_evidence, evidence_findings = sanitize_sensitive_text(evidence)
+        detected_findings = sorted(set(question_findings + evidence_findings))
+        if detected_findings:
+            st.warning("민감정보가 감지되어 외부 AI 전송 전에 자동 마스킹했습니다: " + ", ".join(detected_findings))
+
+        display_user = question + (f"\n\n{attachment_label}" if attachment_label else "")
+        payload_user = safe_question
+        if safe_evidence:
+            payload_user += f"\n\n[첨부파일의 확인된 분석 결과]\n{safe_evidence}"
+        elif chat_file:
+            payload_user += "\n\n[첨부파일 분석 결과]\n파일을 읽지 못했습니다. 확인되지 않은 내용은 추측하지 마세요."
+
+        st.session_state['ai_chat_history'].append({
+            "role": "user",
+            "content": payload_user,
+            "display": display_user,
+            "payload": payload_user
+        })
+
+        with chat_box:
+            with st.chat_message("user"):
+                st.markdown(display_user)
+
+            with st.chat_message("assistant"):
+                messages = [{
+                    "role": "system",
+                    "content": _build_ai_guardrail_system("당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다.")
+                }]
+                recent_history = st.session_state['ai_chat_history'][-AI_CHAT_HISTORY_LIMIT:]
+                for m in recent_history:
+                    if m["role"] in ["user", "assistant"]:
+                        messages.append({
+                            "role": m["role"],
+                            "content": _clip_text(m.get("payload", m["content"]), AI_CHAT_MESSAGE_LIMIT)
+                        })
+                bot_ans = st.write_stream(stream_nvidia_llm_messages(messages))
+
+        st.session_state['ai_chat_history'].append({"role": "assistant", "content": bot_ans, "payload": bot_ans})
+        st.rerun(scope="fragment")
 
 # ==========================================
 # 5. 메인 대시보드 화면
@@ -2177,108 +2279,21 @@ def show_main_page():
         st.caption("대학 구성원들이 공유한 개발 산출물을 탐색하고, 피드백과 이슈로 함께 개선해 나가는 공간입니다.")
         ai_privacy_ack = render_ai_privacy_notice()
 
-        # --- [실험실 상단 플로팅 팝오버 형태의 AI 어시스턴트 챗봇] ---
-        with st.popover("AI 어시스턴트에게 무엇이든 물어보기", use_container_width=True):
-            st.markdown("##### AI 실시간 어시스턴트")
-            st.caption("질문과 함께 파일을 첨부하면 파일 형식·내부 구조·확인 가능한 내용까지 근거를 표시해 답변합니다.")
-
-            if ai_privacy_ack:
-                st.caption("개인정보 보호 안내 확인 완료 · 민감정보는 자동 마스킹됩니다.")
-            else:
-                st.warning("먼저 개인정보 보호 안내를 확인해 주세요.")
-
-            chat_file = st.file_uploader(
-                "분석할 파일 첨부 (선택)",
-                accept_multiple_files=False,
-                key="floating_chat_file",
-                help="CSV, Excel, JSON, TXT, PDF, Word, PowerPoint, 이미지 등. 읽지 못한 내용은 추측하지 않습니다."
-            )
-            if chat_file:
-                st.caption(f"첨부됨: {chat_file.name} · {len(chat_file.getvalue()):,} bytes")
-
-            chat_box = st.container(height=300)
-            with chat_box:
-                for msg in st.session_state['ai_chat_history']:
-                    with st.chat_message(msg["role"]):
-                        st.markdown(msg.get("display", msg["content"]))
-
-            chat_input_col, new_question_col = st.columns([8.8, 1.2], gap="small")
-            with chat_input_col:
-                chat_prompt = st.chat_input(
-                    "질문을 입력하세요...",
-                    key="floating_chat_input",
-                    disabled=not ai_privacy_ack
-                )
-            with new_question_col:
-                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-                new_question_clicked = st.button(
-                    "새 질문",
-                    key="new_ai_question_bottom",
-                    use_container_width=True,
-                    disabled=not ai_privacy_ack
-                )
-
-            if new_question_clicked:
-                st.session_state['ai_chat_history'] = [
-                    {"role": "assistant", "content": "안녕하세요. AI 어시스턴트입니다. 대학 행정 자동화나 개발 관련 궁금증을 편하게 질문해 주세요."}
-                ]
-                st.session_state.pop("floating_chat_file", None)
-                st.rerun()
-
-            if chat_prompt:
-                question = chat_prompt.strip()
-                evidence = ""
-                attachment_label = ""
-                if chat_file:
-                    attachment_label = f"첨부파일: `{chat_file.name}`"
-                    evidence = analyze_file_bytes(chat_file.getvalue(), chat_file.name, chat_file.type)
-                elif not question:
-                    question = "첨부 파일을 분석해 주세요."
-
-                safe_question, question_findings = sanitize_sensitive_text(question)
-                safe_evidence, evidence_findings = sanitize_sensitive_text(evidence)
-                detected_findings = sorted(set(question_findings + evidence_findings))
-                if detected_findings:
-                    st.warning(
-                        "민감정보가 감지되어 외부 AI 전송 전에 자동 마스킹했습니다: "
-                        + ", ".join(detected_findings)
-                    )
-
-                display_user = question + (f"\n\n{attachment_label}" if attachment_label else "")
-                payload_user = safe_question
-                if safe_evidence:
-                    payload_user += f"\n\n[첨부파일의 확인된 분석 결과]\n{safe_evidence}"
-                elif chat_file:
-                    payload_user += "\n\n[첨부파일 분석 결과]\n파일을 읽지 못했습니다. 확인되지 않은 내용은 추측하지 마세요."
-
-                st.session_state['ai_chat_history'].append({
-                    "role": "user",
-                    "content": payload_user,
-                    "display": display_user,
-                    "payload": payload_user
-                })
-
-                with chat_box:
-                    with st.chat_message("user"):
-                        st.markdown(display_user)
-
-                    with st.chat_message("assistant"):
-                        messages = [{
-                            "role": "system",
-                            "content": _build_ai_guardrail_system("당신은 대학 행정 자동화 및 개발을 돕는 친절한 AI 어시스턴트입니다.")
-                        }]
-                        recent_history = st.session_state['ai_chat_history'][-AI_CHAT_HISTORY_LIMIT:]
-                        for m in recent_history:
-                            if m["role"] in ["user", "assistant"]:
-                                messages.append({
-                                    "role": m["role"],
-                                    "content": _clip_text(m.get("payload", m["content"]), AI_CHAT_MESSAGE_LIMIT)
-                                })
-
-                        bot_ans = st.write_stream(stream_nvidia_llm_messages(messages))
-
-                st.session_state['ai_chat_history'].append({"role": "assistant", "content": bot_ans, "payload": bot_ans})
-                st.rerun()
+        # --- AI 어시스턴트: 화면 오른쪽 아래 버튼 -> 팝업창 ---
+        st.markdown("""
+        <style>
+        .st-key-open_ai_dialog { position: fixed; right: 28px; bottom: 28px; z-index: 999; width: auto !important; }
+        .st-key-open_ai_dialog button {
+            border-radius: 999px !important; padding: 12px 22px !important; border: none !important;
+            background: linear-gradient(to right, var(--accent), var(--accent-secondary)) !important;
+            box-shadow: var(--shadow-accent-lg);
+        }
+        .st-key-open_ai_dialog button p,
+        .st-key-open_ai_dialog button:hover p { color: #fff !important; font-weight: 600; }
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("AI 어시스턴트", key="open_ai_dialog"):
+            show_ai_assistant_dialog(ai_privacy_ack)
 
         st.write("<br>", unsafe_allow_html=True)
 
@@ -2697,7 +2712,7 @@ def show_main_page():
                                 if st.session_state.get('last_save_status') != "fail":
                                     st.rerun()
                             else:
-                                st.warning("NVIDIA API 또는 입력값 오류를 확인해 주세요.")
+                                st.warning("이슈 제목을 입력해 주세요.")
 
                     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -2838,6 +2853,8 @@ def show_main_page():
             st.info("아직 제출된 현황조사 데이터가 없습니다.")
         else:
             survey_df = pd.DataFrame(survey_list)
+            if "User_ID" in survey_df.columns:
+                survey_df["User_ID"] = survey_df["User_ID"].astype(str)
             st.markdown(f"**총 제출 건수:** {len(survey_df)}건")
             st.dataframe(survey_df, use_container_width=True, hide_index=True)
             
