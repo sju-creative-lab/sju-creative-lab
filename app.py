@@ -23,6 +23,7 @@ import streamlit.components.v1 as components
 # NVIDIA Build API 설정 (OpenAI 호환 방식 - Streaming)
 # ==========================================
 NVIDIA_API_KEY = st.secrets.get("NVIDIA_API_KEY", "")
+NVIDIA_MODEL = st.secrets.get("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 def stream_nvidia_llm_messages(messages):
@@ -39,11 +40,12 @@ def stream_nvidia_llm_messages(messages):
     
     safe_messages, _detected_sensitive_types = sanitize_messages_for_external_ai(messages)
     payload = {
-        "model": "meta/llama-3.2-11b-vision-instruct",
+        "model": NVIDIA_MODEL,
         "messages": safe_messages,
         "stream": True,
         "max_tokens": 1024,
-        "temperature": 0.5
+        "temperature": 0.5,
+        "chat_template_kwargs": {"enable_thinking": False}
     }
     
     last_error = "알 수 없는 오류"
